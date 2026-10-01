@@ -408,15 +408,122 @@ The following sections cover a Rust-native terminal UI (TUI) self-service deploy
 
 
 
+
+
+
 ## Executing the Factories and the TUI
 
 Provided here is the compilation process using the provided Makefile per factory project including the steps to compile the Rust native IaC provisioning self-service TUI.
 
 ### The Packer CI and OpenTofu - NGO Version
 
+Prerequisites on the workstation: `tofu` (≥ 1.10), `node` (≥ 22), `tflint`, `cargo` (Rust ≥ 1.85, edition 2024), `wrangler`. On Cloudflare: one account, one zone, a dedicated R2 bucket `edge-factory-state` with its own API token, and two scoped API tokens (plan = read, apply = edit; scopes in `edge-factory-ngo/security/README.md`) stored in OpenBao under `secret/cloudflare/prod/{plan,apply}` with a 64-hex `tofu_encryption_key`. No secret is ever stored in GitHub; `ci/auth.mjs` exchanges the GitHub OIDC token for a 15-minute OpenBao token at run time.
+
+```shell
+cd edge-factory-ngo/edge-factory-ngo
+# dotfiles ship renamed: restore them once
+mv dot.gitignore .gitignore && mv dot.pre-commit-config.yaml .pre-commit-config.yaml && mv dot.tflint.hcl .tflint.hcl
+
+make check        # tofu fmt + validate (offline), tflint, cargo check of the TUI workspace
+make test         # 16 CI guard tests (plan provenance, request-file fingerprints, routing) + cargo test
+```
+
+Compile and run the Rust self-service TUI (`ssip/` workspace: `edgefactory-core`, `edgefactory-tui`, `edgefactory-ssip`):
+
+```shell
+make -C ssip check                         # cargo check --workspace
+make -C ssip build                         # cargo build --release  ->  ssip/target/release/edgefactory
+./ssip/target/release/edgefactory --demo   # walk the screens with a built-in catalog, no account needed
+make request                               # the real thing: --mode tofu, validates against platform/spec.schema.json
+                                           # and writes infra/live/prod/requests/<name>.json
+```
+
+Deploy through the two-stage pipeline (the request file is the only thing an app team commits):
+
+```shell
+git add infra/live/prod/requests/<name>.json && git commit -m "<name>" && gh pr create
+#   plan.yml : check -> plan (OIDC -> OpenBao -> read-scoped token -> tofu plan against R2) -> gate
+#   review the plan: it lists every Cloudflare object the app-stack profile layer chose for the tier/exposure
+#   merge    : apply.yml verifies 13 provenance fingerprints and applies exactly that plan with the edit-scoped token
+make bindings                              # after apply: artifacts/bindings/<app>.json for the app's wrangler.jsonc
+```
+
+Image build in this variant: the Rust application container is built from `containers/app.Containerfile` and shipped **by the app repository** with `wrangler deploy` into the Worker shell the pipeline created (Cloudflare Containers are deployed through wrangler, not the Terraform provider). Local plan/apply without GitHub (break-glass only): `make plan` and `make apply PLAN=artifacts/approved.tfplan` with `CLOUDFLARE_API_TOKEN`, `AWS_ACCESS_KEY_ID/SECRET` (R2) and `TOFU_ENCRYPTION_KEY` in the environment.
+
 ### The Packer CI and OpenTofu - GO Version
 
+Prerequisites: everything from NGO plus a Kubernetes cluster you already run (a small k3s is enough; kubeconfig context `k3s-edge`), `flux`, `kubectl`, and an OpenBao Kubernetes-auth mount for that cluster (`edge-factory-go/security/README.md`). The control loop is the Flux tofu-controller; there is no GitHub Actions workflow in this variant.
+
+```shell
+cd edge-factory-go/edge-factory-go
+mv dot.gitignore .gitignore && mv dot.pre-commit-config.yaml .pre-commit-config.yaml
+
+make check        # tofu fmt + validate for prod and the control-plane root, kustomize build of gitops/, cargo check
+make test         # 5 consistency tests (CR paths, ExternalSecrets, backend override == backend.tfbackend, versions) + cargo test
+```
+
+Day 0, once — Flux and the bootstrap source on the cluster (OpenTofu runs here and then goes dormant):
+
+```shell
+export TF_VAR_registry='{host="ghcr.io",username="<user>",password="<token>"}'   # from OpenBao
+export TOFU_ENCRYPTION_KEY=<64 hex from OpenBao>
+make bootstrap    # infra/live/control-plane/flux: Flux (Helm) + OCIRepository(tree:main) + Kustomization(gitops/flux-system)
+make status       # Flux then installs tofu-controller + External Secrets, syncs the Cloudflare token / R2 keys / encryption
+                  # block from OpenBao, and creates the Terraform CR prod-edge (interval 5m, approvePlan auto)
+```
+
+Compile and run the TUI exactly as in NGO (`make -C ssip build`, `--demo`, `make request` writes `infra/live/prod/requests/<name>.json`). The release is a push of the committed tree as an OCI artifact:
+
+```shell
+git commit -am "<name>"
+make push         # flux push artifact oci://ghcr.io/<you>/edge-factory-go/tree:<sha>, tagged :main
+make status       # within ~6 minutes the controller has planned and applied; drift is corrected on the next loop
+kubectl -n flux-system get secret prod-edge-outputs -o jsonpath='{.data.wrangler_bindings}' | base64 -d   # bindings for wrangler.jsonc
+```
+
+Image build: as in NGO, the application container is built from `containers/app.Containerfile` and deployed with `wrangler deploy` from the app repository into the shell the controller created.
+
 ### The Packer CI and Crossplane - GLGO Version
+
+Prerequisites: a Kubernetes cluster (k3s, context `k3s-edge`), `crossplane` CLI, `cosign`, `podman`, `kubectl`, a GHCR credential, a cosign key in OpenBao Transit with its public half exported, and an OpenBao Kubernetes-auth mount (`edge-factory-xp/security/README.md`). The provider is the official `crossplane-contrib/provider-upjet-cloudflare`; nothing is generated locally.
+
+```shell
+cd edge-factory-xp/edge-factory-xp
+mv dot.gitignore .gitignore && mv dot.pre-commit-config.yaml .pre-commit-config.yaml
+
+make check        # tofu fmt + validate (control-plane root), crossplane beta validate platform/, cargo check
+make test         # 7 consistency tests: XRD == spec.schema.json == app-stack inputs, MR kinds activated, SSIP constants == admission policy
+```
+
+Day 0 — platform engineering stocks the inventory (run in this order, once):
+
+```shell
+export TF_VAR_registry='{host="ghcr.io",username="<user>",password="<token>"}'
+export TF_VAR_cosign_public_key="$(cat cosign.pub)"
+export TOFU_ENCRYPTION_KEY=<64 hex>
+make bootstrap    # infra/live/control-plane/crossplane: Crossplane 2.4 on the cluster, signature verification on
+make build        # crossplane xpkg build of platform/ (XRD + Composition + deps)  +  the SSIP service image (containers/ssip.Containerfile)
+make publish      # push + cosign-sign the Configuration package and the SSIP image to GHCR
+make register     # ImageConfig, Configuration (pulls the provider + 3 functions), policy (RBAC, admission, MR activation),
+                  # EnvironmentConfigs (account, zones, tier opinions), ProviderConfig (token via External Secrets), SSIP Deployment
+make status
+```
+
+Day 1 — an app team compiles and runs the TUI in `xp` mode (same binary as NGO/GO, different mode):
+
+```shell
+make -C ssip build
+./ssip/target/release/edgefactory --demo                      # offline walkthrough of all screens
+export EDGEFACTORY_TOKEN=$(<your SSO login>)                   # OIDC bearer for the SSIP service
+make request                                                  # --mode xp: choose -> review -> Enter
+#   the SSIP service verifies the token, validates against the XRD, pushes a cosign-signed freight artifact to GHCR,
+#   applies the AppStack; the admission policy admits it only from the SSIP identity with a digest;
+#   Crossplane matches the registered XRD + Composition and composes the managed resources
+#   the watch screen shows hostname, Worker, D1/R2/Hyperdrive, Access, LB and, when Ready, the wrangler bindings
+```
+
+Image build: the application container is deployed with `wrangler deploy` into the `WorkersScript` shell Crossplane created; the shell is composed with `managementPolicies` without `Update`, so a wrangler deploy is never reverted by the controller.
+
 
 
 

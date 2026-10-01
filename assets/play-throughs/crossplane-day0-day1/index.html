@@ -270,6 +270,7 @@ const card = (x, y, w, h, title, body = [], o = {}) => {
   body.forEach((b, i) => s += T(x + w / 2, y + 38 + i * 15, b, { size: 10, anchor: 'middle', color: G.grey, mono: o.mono }));
   return s;
 };
+const note = (x, y, str, max = 92) => { const out = []; let cur = ''; for (const w of str.split(' ')) { if ((cur + ' ' + w).trim().length > max) { out.push(cur.trim()); cur = w; } else cur += ' ' + w; } if (cur.trim()) out.push(cur.trim()); return out.map((l, i) => T(x, y + i * 17, l, { size: 12, color: G.grey, italic: true })).join(''); };
 const strobe = (t, period = 1.2) => 0.35 + 0.65 * Math.abs(Math.sin((t / period) * Math.PI));
 const mac = (x, y, w, h, title, inner) => `<g transform="translate(${x} ${y})"><rect width="${w}" height="${h}" rx="10" fill="${G.panel}" stroke="${G.dim}"/><rect width="${w}" height="28" rx="10" fill="#101512"/><rect y="18" width="${w}" height="10" fill="#101512"/><circle cx="18" cy="14" r="5" fill="#FF5F57"/><circle cx="36" cy="14" r="5" fill="#FEBC2E"/><circle cx="54" cy="14" r="5" fill="#28C840"/>${T(w / 2, 18, title, { size: 11, anchor: 'middle', color: G.grey, mono: true })}<g transform="translate(0 28)">${inner}</g></g>`;
 
@@ -278,18 +279,18 @@ function cluster(t, on) {
   const x = 700, y = 60, w = 540, h = 440;
   let s = mac(x, y, w, h, 'k3s · crossplane-system · edgefactory-system', '');
   const inner = (ix, iy, iw, ih, title, body, key, o = {}) => slide(fade(t, on[key] ?? 0, 0.5), 8, card(x + ix, y + 28 + iy, iw, ih, title, body, o));
-  s += inner(16, 12, 150, 56, 'Crossplane 2.4', ['composition engine'], 'core', { stroke: G.green });
-  s += inner(182, 12, 170, 56, 'provider-upjet-cloudflare', ['official · namespaced'], 'provider', { mono: true });
-  s += inner(368, 12, 156, 56, 'functions', ['env-configs · go-templating', 'auto-ready'], 'functions');
+  s += inner(16, 12, 132, 56, 'Crossplane 2.4', ['composition engine'], 'core', { stroke: G.green });
+  s += inner(160, 12, 214, 56, 'provider-upjet-cloudflare', ['official · namespaced'], 'provider', { mono: true, size: 11 });
+  s += inner(386, 12, 138, 56, 'functions', ['env-configs · templating', 'auto-ready'], 'functions');
   s += inner(16, 84, 230, 70, 'XRD  AppStack', ['spec: 6 fields   status: 8 fields', 'edgefactory.dronegrid.io/v1alpha1'], 'xrd', { stroke: G.green, sw: 2.5, mono: true });
   s += inner(262, 84, 262, 70, 'Composition', ['pipeline: environment → render → ready', 'the opinions table as data'], 'comp', { stroke: G.green, sw: 2.5 });
   s += inner(16, 170, 150, 56, 'EnvironmentConfigs', ['tiers · zones · account'], 'env');
-  s += inner(182, 170, 170, 56, 'Kyverno', ['admission: SSIP identity', '+ freight digest'], 'kyverno', { stroke: G.amber });
+  s += inner(182, 170, 170, 60, 'Kyverno', ['admission: SSIP identity', '+ freight digest'], 'kyverno', { stroke: G.amber });
   s += inner(368, 170, 156, 56, 'OTel collector', ['traces · metrics · logs'], 'otel');
-  s += inner(16, 242, 508, 60, 'inventory  (ever-growing, day 0)', [], 'inv');
+  s += slide(fade(t, on.inv ?? 0, 0.5), 8, `<rect x="${x + 16}" y="${y + 28 + 242}" width="508" height="76" rx="8" fill="${G.panel}" stroke="${G.dim}" stroke-width="1.5"/>` + T(x + 28, y + 28 + 260, 'inventory  (ever-growing, day 0)', { size: 11, weight: 700, color: G.grey }));
   const pk = ['AppStack v1', 'AppStack v2', 'EdgeDB', 'RustService', 'StaticSite', 'Queue'];
-  pk.forEach((p, i) => { const op = fade(t, (on.inv ?? 0) + 0.5 + i * 0.5, 0.35); s += g(op, `<rect x="${x + 28 + i * 82}" y="${y + 28 + 266}" width="74" height="24" rx="5" fill="#101512" stroke="${i < 2 ? G.green : G.dim}"/>` + T(x + 65 + i * 82, y + 28 + 282, p, { size: 9.5, anchor: 'middle', color: i < 2 ? G.green : G.grey })); });
-  s += inner(16, 316, 508, 86, 'namespace team-billing', [], 'ns');
+  pk.forEach((p, i) => { const op = fade(t, (on.inv ?? 0) + 0.5 + i * 0.5, 0.35); s += g(op, `<rect x="${x + 28 + i * 82}" y="${y + 28 + 274}" width="74" height="24" rx="5" fill="#101512" stroke="${i < 2 ? G.green : G.dim}"/>` + T(x + 65 + i * 82, y + 28 + 290, p, { size: 9.5, anchor: 'middle', color: i < 2 ? G.green : G.grey })); });
+  s += slide(fade(t, on.ns ?? 0, 0.5), 8, `<rect x="${x + 16}" y="${y + 28 + 330}" width="508" height="72" rx="8" fill="${G.panel}" stroke="${G.dim}" stroke-width="1.5"/>` + T(x + 28, y + 28 + 348, 'namespace team-billing', { size: 11, weight: 700, color: G.grey }));
   return s;
 }
 
@@ -308,7 +309,7 @@ const story = {
       left += slide(fade(t, 0.3), 10, card(lx, 70, lw, 70, 'DAY 0 · platform engineering', ['one person, once: make bootstrap → Crossplane, provider, functions, Kyverno, OTel on the cluster'], { color: G.green }));
       const steps = [['make bootstrap', 'OpenTofu installs Crossplane on k3s'], ['provider + functions', 'pulled as signed OCI packages'], ['Kyverno + OTel', 'guards and telemetry before any request exists']];
       steps.forEach(([a, c], i) => left += slide(fade(t, 1.5 + i * 1.6), 10, card(lx, 160 + i * 80, lw, 64, a, [c], { mono: i === 0 })));
-      left += g(fade(t, 7), T(lx, 420, 'A controller cannot install the cluster it is not on yet. OpenTofu does that once, then goes dormant.', { size: 12, color: G.grey, italic: true }));
+      left += g(fade(t, 7), note(lx, 420, 'A controller cannot install the cluster it is not on yet. OpenTofu does that once, then goes dormant.'));
     } else if (t < 32) {
       // XRD + Composition authoring, packaging, registration
       const tt = t - 12;
@@ -320,26 +321,26 @@ const story = {
       const statF = ['hostname', 'worker', 'd1DatabaseId', 'r2Bucket', 'accessApplicationId', 'wranglerBindings'];
       left += g(fade(tt, 1.2), T(xx + 160, xy + 48, 'spec  (the friendly inputs)', { size: 11, weight: 700, color: G.amber }) + T(xx + 440, xy + 48, 'status  (the window back)', { size: 11, weight: 700, color: G.green }));
       specF.forEach((f, i) => { const op = fade(tt, 1.6 + i * 0.25); left += g(op, T(xx + 160, xy + 70 + i * 20, f, { size: 11, mono: true })); left += g(op * strobe(t), line(P, xx + 100, xy + 66 + i * 20, xx + 150, xy + 66 + i * 20, 1, { color: G.amber, sw: 2 })); });
-      statF.forEach((f, i) => { const op = fade(tt, 3.2 + i * 0.25); left += g(op, T(xx + 440, xy + 70 + i * 20, f, { size: 11, mono: true })); left += g(op * strobe(t + 0.6), line(P, xx + 560, xy + 66 + i * 20, xx + 606, xy + 66 + i * 20, 1, { color: G.green, sw: 2 })); });
+      statF.forEach((f, i) => { const op = fade(tt, 3.2 + i * 0.25); left += g(op, T(xx + 440, xy + 70 + i * 20, f, { size: 11, mono: true })); left += g(op * strobe(t + 0.6), line(P, xx + 572, xy + 66 + i * 20, xx + 608, xy + 66 + i * 20, 1, { color: G.green, sw: 2 })); });
       left += g(fade(tt, 1.6), T(xx + 20, xy + 110, 'TUI', { size: 11, weight: 700, color: G.amber }) + T(xx + 20, xy + 124, 'writes', { size: 9.5, color: G.grey }));
       left += g(fade(tt, 3.2), T(xx + 612, xy + 110, '→', { size: 14, color: G.green }));
       left += slide(fade(tt, 5.5), 10, card(lx, 348, 300, 70, 'Composition (pipeline)', ['patch-and-transform as data:', 'tier → sampling, replication, rate limit…'], { stroke: G.green }));
       left += slide(fade(tt, 6.5), 10, card(lx + 320, 348, 300, 70, 'make build · publish · register', ['xpkg → cosign → GHCR →', 'Configuration installs XRD + Composition'], { mono: true }));
       left += packet(P, lx + 470, 418, 700 + 16 + 115, 60 + 28 + 84, (tt - 7.2) / 1.2, 'xpkg', { color: G.green });
-      left += g(fade(tt, 9.5), T(lx, 450, 'Registration = the inventory grows. Each package is a pre-registered XRD + Composition pair; the elves stock the shelf before any customer arrives.', { size: 12, color: G.grey, italic: true }));
+      left += g(fade(tt, 9.5), note(lx, 450, 'Registration = the inventory grows. Each package is a pre-registered XRD + Composition pair; the elves stock the shelf before any customer arrives.'));
     } else if (t < 50) {
       // Day 1: consumer submits via TUI; SSIP; Kyverno; match?
       const tt = t - 32;
       left += slide(fade(tt, 0.2), 10, card(lx, 70, lw, 48, 'DAY 1 · an app team asks, in the SSIP terminal', [], { color: G.green, size: 11 }));
       left += slide(fade(tt, 0.8), 10, mac(lx, 130, 300, 150, 'edgefactory --mode xp', `<rect width="300" height="122" fill="#070A08"/>` + [['zone', 'dronegrid.io'], ['hostname', 'billing'], ['tier', 'medium'], ['exposure', 'public'], ['database', 'd1'], ['objects', 'true']].map(([k, v], i) => T(12, 20 + i * 17, `${k.padEnd(10)} ${v}`, { size: 10.5, mono: true, color: tt > 1.2 + i * 0.3 ? G.ink : '#3a443e' })).join('')));
       left += slide(fade(tt, 3.6), 10, card(lx + 320, 130, 300, 150, 'SSIP service', ['1 OIDC verified', '2 schema valid (the XRD\'s OpenAPI v3)', '3 freight pushed + cosign-signed', '4 AppStack applied with digest'], { stroke: G.green }));
-      [0, 1, 2, 3].forEach(i => left += check(P, lx + 332, 164 + i * 15, fade(tt, 4.2 + i * 0.6, 0.3)));
+      [0, 1, 2, 3].forEach(i => left += check(P, lx + 320 + 300 - 22, 164 + i * 15, fade(tt, 4.2 + i * 0.6, 0.3)));
       left += packet(P, lx + 470, 280, 700 + 16 + 85, 60 + 28 + 170, (tt - 6.6) / 1.0, 'AppStack', { color: G.amber });
       left += slide(fade(tt, 8.0), 10, card(lx, 300, lw, 54, 'Kyverno admission', ['from the SSIP ServiceAccount?  freight digest present?  → admitted'], { stroke: G.amber }));
       left += check(P, lx + lw - 24, 318, fade(tt, 9.0, 0.3));
       left += slide(fade(tt, 10.0), 10, card(lx, 372, lw, 90, 'Crossplane inspects itself', ['is an XRD registered for kind AppStack / edgefactory.dronegrid.io?  → yes (day 0)', 'is there a Composition whose compositeTypeRef matches, with the selected labels?  → yes', 'then: render the pipeline → managed resources → the provider reconciles each one'], { stroke: G.green }));
       [0, 1, 2].forEach(i => left += check(P, lx + lw - 24, 404 + i * 15, fade(tt, 11 + i * 0.8, 0.3)));
-      left += g(fade(tt, 14.5), T(lx, 490, 'Nothing is improvised at request time. Only what platform engineering pre-registered can be served.', { size: 12, color: G.grey, italic: true }));
+      left += g(fade(tt, 14.5), note(lx, 490, 'Nothing is improvised at request time. Only what platform engineering pre-registered can be served.'));
     } else if (t < 60) {
       // no-match branch
       const tt = t - 50;
@@ -362,8 +363,8 @@ const story = {
     }
     b += left;
     // request lands in the namespace (day 1 onwards)
-    if (t >= 40) { const op = fade(t, 40, 0.6); b += slide(op, 6, card(700 + 32, 60 + 28 + 338, 180, 44, 'AppStack billing-api', ['freight sha256:4a1f…'], { stroke: G.amber, mono: true, size: 11 })); }
-    if (t >= 44) { ['WorkersScript', 'WorkerDomain', 'R2Bucket', 'D1Database'].forEach((m, i) => b += slide(fade(t, 44 + i * 0.8, 0.5), 6, card(700 + 232 + (i % 2) * 150, 60 + 28 + 338 + Math.floor(i / 2) * 24, 140, 20, m, [], { size: 9.5, mono: true, stroke: G.green2 }))); }
+    if (t >= 40) { const op = fade(t, 40, 0.6); b += slide(op, 6, card(700 + 32, 60 + 28 + 354, 180, 44, 'AppStack billing-api', ['freight sha256:4a1f…'], { stroke: G.amber, mono: true, size: 10.5 })); }
+    if (t >= 44) { ['WorkersScript', 'WorkerDomain', 'R2Bucket', 'D1Database'].forEach((m, i) => b += slide(fade(t, 44 + i * 0.8, 0.5), 6, card(700 + 232 + (i % 2) * 150, 60 + 28 + 356 + Math.floor(i / 2) * 22, 140, 18, m, [], { size: 9.5, mono: true, stroke: G.green2 }))); }
     // caption
     const scenes = [[0, 12, 'Day 0 — the substrate', 'Platform engineering runs make bootstrap once. Crossplane, the official upjet Cloudflare provider, the three functions, Kyverno and the OTel collector exist before any request does.'], [12, 32, 'Day 0 — the API, pre-registered', 'An XRD declares the six friendly spec fields and the status window; the Composition is the opinions table rendered into managed resources. Packaged, signed, installed by a Configuration: the inventory grows.'], [32, 50, 'Day 1 — self-service', 'The SSIP terminal writes the spec; the service verifies identity, validates against the XRD, stores signed freight, applies the AppStack. Kyverno admits it; Crossplane looks for the registered XRD + Composition pair and composes.'], [50, 60, 'No match, no service', 'A kind nobody registered is rejected by the API server; a known kind from kubectl is denied by Kyverno. Day 0 decides what day 1 may ask for.'], [60, 78, 'Forever', 'Each managed resource reconciles on its own; status flows back into the XR and the terminal; OpenTelemetry carries every reconcile. Then: wrangler deploy into the shell.']];
     for (const [a, c, h, l] of scenes) if (t >= a && t < c) b += `<rect x="0" y="${H - 96}" width="${W}" height="96" fill="${G.panel}"/><rect x="0" y="${H - 96}" width="${W}" height="2" fill="${G.green}"/>` + T(40, H - 66, h.toUpperCase(), { size: 13, weight: 700, color: G.green }) + (() => { const out = []; let cur = ''; for (const w of l.split(' ')) { if ((cur + ' ' + w).trim().length > 170) { out.push(cur.trim()); cur = w; } else cur += ' ' + w; } if (cur.trim()) out.push(cur.trim()); return out.map((x, i) => T(40, H - 44 + i * 18, x, { size: 12.5 })).join(''); })();
