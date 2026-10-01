@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How Crossplane 2 actually works — day 0 to day 1</title>
+<style>
+  :root{color-scheme:dark;--bg:#050607;--panel:#0B0E0C;--green:#3DFF9A;--amber:#FFB000;--grey:#7C8A82;--dim:#2A332E;--ink:#E6F2EA}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:'Helvetica Neue',Helvetica,Arial,sans-serif}
+  header{max-width:1280px;margin:0 auto;padding:22px 16px 6px;display:flex;align-items:baseline;gap:18px}
+  header h1{font-family:'Koulen','Impact','Arial Narrow',sans-serif;font-weight:400;letter-spacing:.06em;font-size:34px;margin:0;color:var(--green);text-transform:uppercase}
+  header span{color:var(--grey);font-size:13px;letter-spacing:.12em;text-transform:uppercase}
+  #stage{width:100%;max-width:1280px;margin:0 auto;display:block;aspect-ratio:16/9;border:1px solid var(--dim);border-radius:12px;overflow:hidden}
+  #stage svg{width:100%;height:auto;display:block}
+  #bar{max-width:1280px;margin:0 auto;display:flex;gap:12px;align-items:center;padding:12px 16px;box-sizing:border-box}
+  button{font:inherit;padding:6px 16px;border:1px solid var(--green);background:transparent;color:var(--green);border-radius:6px;cursor:pointer;letter-spacing:.08em;text-transform:uppercase;font-size:12px}
+  button.primary{background:var(--green);color:#050607}
+  input[type=range]{flex:1;accent-color:var(--green)}
+  #time{font-variant-numeric:tabular-nums;color:var(--grey);min-width:70px;text-align:right}
+  #hint{max-width:1280px;margin:0 auto;padding:0 16px 20px;color:var(--grey);font-size:12px}
+  label{font-size:12px;color:var(--grey)}
+</style></head>
+<body>
+<header><h1>How Crossplane 2 actually works</h1><span>day 0 registration · day 1 self-service · reconcile forever</span></header>
+<div id="stage"></div>
+<div id="bar"><button id="play" class="primary">Play</button><button id="restart">Restart</button><input id="seek" type="range" min="0" max="1000" value="0"><span id="time">0.0 s</span><label><input id="loop" type="checkbox" checked> loop</label></div>
+<div id="hint">Self-contained SVG animation: no network, no assets. Space = play/pause · ← → = ±2 s · Home = restart.</div>
+<script>
+// Tiny SVG drawing kit: hand-drawn vector diagrams from a few primitives.
+const REPO = { bg: '#FFFFFF', fg: '#000000', accent: '#D7262C', line: '#000000', soft: '#FFFFFF', gold: '#D7262C', grey: '#000000', dim: '#000000' };
+const LIGHT = { bg: '#FFFFFF', fg: '#0B0B0C', accent: '#D7262C', line: '#0B0B0C', soft: '#F4F4F6', gold: '#B8891A', grey: '#5C6068', dim: '#8A8F98' };
+const DECK = { bg: '#0B0B0C', fg: '#FFFFFF', accent: '#D7262C', line: '#8A8F98', soft: '#16171A', gold: '#C9A227', grey: '#8A8F98', dim: '#5C6068' };
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const FONT = "font-family=\"'Helvetica Neue', Helvetica, Arial, sans-serif\"";
+const MONO = "font-family=\"'JetBrains Mono', Menlo, Consolas, monospace\"";
+
+function box(P, x, y, w, h, o = {}) {
+  const r = o.r ?? 6;
+  const fill = o.fill ?? P.soft;
+  const stroke = o.stroke ?? P.line;
+  const sw = o.sw ?? 2;
+  const dash = o.dash ? ` stroke-dasharray="${o.dash}"` : '';
+  let s = `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"${dash}/>`;
+  if (o.title) s += text(P, x + w / 2, y + (o.body ? 26 : h / 2 + 1), o.title, { size: o.size ?? 15, weight: 700, color: o.color ?? P.fg, anchor: 'middle', mono: o.mono });
+  if (o.body) {
+    const lines = Array.isArray(o.body) ? o.body : [o.body];
+    lines.forEach((l, i) => { s += text(P, x + w / 2, y + 48 + i * 18, l, { size: o.mono ? 10.5 : 12, color: o.bodyColor ?? P.grey, anchor: 'middle', mono: o.mono }); });
+  }
+  return s;
+}
+function text(P, x, y, t, o = {}) {
+  const size = o.size ?? 13, weight = o.weight ?? 400, color = o.color ?? P.fg, anchor = o.anchor ?? 'start';
+  const f = o.mono ? MONO : FONT;
+  const it = o.italic ? ' font-style="italic"' : '';
+  return `<text x="${x}" y="${y}" ${f} font-size="${size}" font-weight="${weight}" fill="${color}" text-anchor="${anchor}"${it}>${esc(t)}</text>`;
+}
+function arrow(P, x1, y1, x2, y2, o = {}) {
+  const color = o.color ?? P.line; const sw = o.sw ?? 2;
+  const dash = o.dash ? ` stroke-dasharray="${o.dash}"` : '';
+  const id = `ah${Math.abs(Math.round(x1 * 7 + y1 * 13 + x2 * 17 + y2 * 19))}${color.slice(1)}`;
+  let s = `<defs><marker id="${id}" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="${color}"/></marker></defs>`;
+  const path = o.path ?? `M${x1},${y1} L${x2},${y2}`;
+  s += `<path d="${path}" fill="none" stroke="${color}" stroke-width="${sw}"${dash} marker-end="url(#${id})"/>`;
+  if (o.label) {
+    const lx = o.lx ?? (x1 + x2) / 2, ly = o.ly ?? (y1 + y2) / 2 - 8;
+    s += text(P, lx, ly, o.label, { size: 11, color: o.labelColor ?? P.grey, anchor: 'middle', italic: true });
+  }
+  return s;
+}
+function pill(P, x, y, t, o = {}) {
+  const w = o.w ?? (t.length * 7.2 + 24), h = 24;
+  return `<rect x="${x - w / 2}" y="${y - h / 2}" width="${w}" height="${h}" rx="12" fill="${o.fill ?? P.accent}" stroke="none"/>` +
+    text(P, x, y + 4, t, { size: 11, weight: 700, color: o.color ?? '#FFFFFF', anchor: 'middle' });
+}
+function badge(P, x, y, n, o = {}) {
+  return `<circle cx="${x}" cy="${y}" r="13" fill="${o.fill ?? P.accent}"/>` + text(P, x, y + 5, String(n), { size: 13, weight: 700, color: '#FFFFFF', anchor: 'middle' });
+}
+function vm(P, x, y, name, sub) {
+  return `<rect x="${x}" y="${y}" width="120" height="70" rx="8" fill="${P.soft}" stroke="${P.line}" stroke-width="2"/>` +
+    `<rect x="${x + 10}" y="${y + 10}" width="100" height="30" rx="3" fill="none" stroke="${P.line}" stroke-width="1.5"/>` +
+    `<line x1="${x + 45}" y1="${y + 40}" x2="${x + 75}" y2="${y + 40}" stroke="${P.line}" stroke-width="1.5"/>` +
+    `<line x1="${x + 60}" y1="${y + 40}" x2="${x + 60}" y2="${y + 48}" stroke="${P.line}" stroke-width="1.5"/>` +
+    text(P, x + 60, y + 30, name, { size: 12, weight: 700, anchor: 'middle' }) +
+    text(P, x + 60, y + 62, sub, { size: 10, color: P.grey, anchor: 'middle' });
+}
+function cylinder(P, x, y, w, h, label, sub) {
+  const ry = 10;
+  return `<path d="M${x},${y + ry} v${h - 2 * ry} a${w / 2},${ry} 0 0 0 ${w},0 v-${h - 2 * ry}" fill="${P.soft}" stroke="${P.line}" stroke-width="2"/>` +
+    `<ellipse cx="${x + w / 2}" cy="${y + ry}" rx="${w / 2}" ry="${ry}" fill="${P.soft}" stroke="${P.line}" stroke-width="2"/>` +
+    text(P, x + w / 2, y + h / 2 + 6, label, { size: 13, weight: 700, anchor: 'middle' }) +
+    (sub ? text(P, x + w / 2, y + h / 2 + 24, sub, { size: 11, color: P.grey, anchor: 'middle' }) : '');
+}
+function svg(P, w, h, body, title) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${esc(title ?? '')}">` +
+    `<rect width="${w}" height="${h}" fill="${P.bg}"/>${body}</svg>`;
+}
+function group(P, x, y, w, h, label, o = {}) {
+  return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="10" fill="none" stroke="${o.stroke ?? P.line}" stroke-width="1.5" stroke-dasharray="${o.dash ?? '6 5'}"/>` +
+    text(P, x + 12, y - 8, label, { size: 12, weight: 700, color: o.color ?? P.grey });
+}
+
+var __engine, __term;
+{
+// Deterministic frame engine: story.frame(t) -> SVG string. Same code drives the HTML player and the MP4 render.
+
+const W = 1280, H = 720;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const ease = t => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
+const lerp = (a, b, t) => a + (b - a) * t;
+const fade = (t, t0, dur = 0.6) => ease((t - t0) / dur);
+const window_ = (t, t0, t1, f = 0.4) => Math.min(fade(t, t0, f), 1 - fade(t, t1 - f, f));
+const g = (op, inner) => op <= 0.001 ? '' : `<g opacity="${op.toFixed(3)}">${inner}</g>`;
+const slide = (op, dy, inner) => op <= 0.001 ? '' : `<g opacity="${op.toFixed(3)}" transform="translate(0 ${((1 - op) * dy).toFixed(1)})">${inner}</g>`;
+function line(P, x1, y1, x2, y2, prog, o = {}) {
+  prog = clamp(prog, 0, 1); if (prog <= 0) return '';
+  const x = lerp(x1, x2, prog), y = lerp(y1, y2, prog);
+  const color = o.color ?? P.line, sw = o.sw ?? 2.5;
+  const id = `m${Math.abs(Math.round(x1 * 3 + y1 * 5 + x2 * 7 + y2 * 11))}${color.slice(1)}`;
+  const dash = o.dash ? ` stroke-dasharray="${o.dash}"` : '';
+  return `<defs><marker id="${id}" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="${color}"/></marker></defs>` +
+    `<line x1="${x1}" y1="${y1}" x2="${x}" y2="${y}" stroke="${color}" stroke-width="${sw}"${dash} marker-end="url(#${id})"/>`;
+}
+function packet(P, x1, y1, x2, y2, prog, label, o = {}) {
+  if (prog <= 0 || prog >= 1) return '';
+  const x = lerp(x1, x2, ease(prog)), y = lerp(y1, y2, ease(prog));
+  const color = o.color ?? P.accent;
+  return `<circle cx="${x}" cy="${y}" r="9" fill="${color}"/>` + (label ? text(P, x, y - 16, label, { size: 11, anchor: 'middle', color, weight: 700 }) : '');
+}
+function check(P, x, y, op) {
+  return g(op, `<circle cx="${x}" cy="${y}" r="11" fill="${P.accent}"/><path d="M${x - 5},${y} l4,4 l7,-8" stroke="#FFFFFF" stroke-width="2.5" fill="none"/>`);
+}
+function wrap(line, max = 150) {
+  const out = []; let cur = '';
+  for (const w of line.split(' ')) { if ((cur + ' ' + w).trim().length > max) { out.push(cur.trim()); cur = w; } else cur += ' ' + w; }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+function caption(P, t, title, lines) {
+  const wrapped = lines.flatMap(l => wrap(l));
+  let s = `<rect x="0" y="${H - 118}" width="${W}" height="118" fill="${P.soft}"/>`;
+  s += `<rect x="0" y="${H - 118}" width="${W}" height="3" fill="${P.accent}"/>`;
+  s += text(P, 40, H - 86, title, { size: 16, weight: 700, color: P.gold });
+  wrapped.forEach((l, i) => { s += text(P, 40, H - 62 + i * 19, l, { size: 13.5, color: P.fg }); });
+  return s;
+}
+function header(P, kicker, title, tnum, total) {
+  let s = text(P, 40, 40, kicker.toUpperCase(), { size: 11, weight: 700, color: P.gold });
+  s += text(P, 40, 74, title, { size: 26, weight: 700 });
+  const barW = W - 80, prog = clamp(tnum / total, 0, 1);
+  s += `<rect x="40" y="${H - 126}" width="${barW}" height="3" fill="${P.line}" opacity="0.15"/><rect x="40" y="${H - 126}" width="${(barW * prog).toFixed(1)}" height="3" fill="${P.accent}"/>`;
+  s += text(P, W - 40, 40, `${Math.floor(tnum)}s`, { size: 11, color: P.grey, anchor: 'end' });
+  return s;
+}
+function makeStory(P, meta, scenes) {
+  const duration = scenes[scenes.length - 1].t1;
+  return {
+    ...meta, duration,
+    frame(t) {
+      t = clamp(t, 0, duration);
+      let body = '';
+      let cap = '';
+      for (const sc of scenes) {
+        if (t < sc.t0 - 0.6 || t > sc.t1 + 0.6) continue;
+        const op = window_(t, sc.t0, sc.t1);
+        body += g(op, sc.render(t - sc.t0, sc.t1 - sc.t0));
+        if (t >= sc.t0 && t < sc.t1) cap = caption(P, t, sc.title, sc.lines);
+      }
+      return svg(P, W, H, header(P, meta.kicker, meta.title, t, duration) + body + cap, meta.title);
+    }
+  };
+}
+
+__engine = { clamp, ease, fade, g, slide, line, packet, check, window_ };
+}
+{
+// Terminal-faithful renderings of the vmfactory TUI screens (what ratatui draws), as SVG.
+
+
+const COLS = 118, ROWS = 30, CW = 8.4, CH = 18, PAD = 14;
+const W = COLS * CW + PAD * 2, H = ROWS * CH + PAD * 2;
+const C = { bg: '#0B0B0C', fg: '#E8E8E8', gold: '#C9A227', red: '#D7262C', grey: '#8A8F98', hlbg: '#C9A227', hlfg: '#0B0B0C', white: '#FFFFFF' };
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+class Screen {
+  constructor() { this.cells = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => ({ ch: ' ', fg: C.fg, bg: null, bold: false }))); }
+  put(x, y, s, o = {}) { for (let i = 0; i < s.length; i++) { if (x + i >= COLS || y >= ROWS) break; this.cells[y][x + i] = { ch: s[i], fg: o.fg ?? C.fg, bg: o.bg ?? null, bold: !!o.bold }; } }
+  box(x, y, w, h, title, o = {}) {
+    const col = o.fg ?? C.grey;
+    this.put(x, y, '┌' + '─'.repeat(w - 2) + '┐', { fg: col });
+    for (let r = 1; r < h - 1; r++) { this.put(x, y + r, '│', { fg: col }); this.put(x + w - 1, y + r, '│', { fg: col }); }
+    this.put(x, y + h - 1, '└' + '─'.repeat(w - 2) + '┘', { fg: col });
+    if (title) this.put(x + 1, y, ' ' + title + ' ', { fg: o.titleFg ?? col, bold: !!o.titleBold });
+  }
+  svg() { return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img">${this.inner()}</svg>`; }
+  inner(chrome = true) {
+    let s = `<rect width="${W}" height="${H}" rx="10" fill="${C.bg}"/>`;
+    if (chrome) s += `<circle cx="22" cy="14" r="5" fill="#FF5F57"/><circle cx="40" cy="14" r="5" fill="#FEBC2E"/><circle cx="58" cy="14" r="5" fill="#28C840"/>`;
+    for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) { const c = this.cells[y][x]; if (c.bg) s += `<rect x="${PAD + x * CW}" y="${PAD + 8 + y * CH}" width="${CW + 0.5}" height="${CH}" fill="${c.bg}"/>`; }
+    const BOX = { '─': 'h', '│': 'v', '┌': 'tl', '┐': 'tr', '└': 'bl', '┘': 'br' };
+    for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+      const c = this.cells[y][x]; if (c.ch === ' ') continue;
+      const x0 = PAD + x * CW, y0 = PAD + 8 + y * CH, cx = x0 + CW / 2, cy = y0 + CH / 2;
+      const k = BOX[c.ch];
+      if (k) {
+        const st = `stroke="${c.fg}" stroke-width="1.2"`;
+        if (k === 'h') s += `<line x1="${x0}" y1="${cy}" x2="${x0 + CW}" y2="${cy}" ${st}/>`;
+        else if (k === 'v') s += `<line x1="${cx}" y1="${y0}" x2="${cx}" y2="${y0 + CH}" ${st}/>`;
+        else if (k === 'tl') s += `<path d="M${cx},${y0 + CH} V${cy} H${x0 + CW}" fill="none" ${st}/>`;
+        else if (k === 'tr') s += `<path d="M${x0},${cy} H${cx} V${y0 + CH}" fill="none" ${st}/>`;
+        else if (k === 'bl') s += `<path d="M${cx},${y0} V${cy} H${x0 + CW}" fill="none" ${st}/>`;
+        else s += `<path d="M${x0},${cy} H${cx} V${y0}" fill="none" ${st}/>`;
+        continue;
+      }
+      s += `<text x="${cx.toFixed(1)}" y="${(y0 + 13.5).toFixed(1)}" text-anchor="middle" font-family="'JetBrains Mono', Menlo, Consolas, monospace" font-size="13.2" fill="${c.fg}"${c.bold ? ' font-weight="700"' : ''}>${esc(c.ch)}</text>`;
+    }
+    return s;
+  }
+}
+const frame = (sc, title) => { sc.box(0, 0, COLS, ROWS, null, { fg: C.gold }); sc.put(2, 0, ` ${C.brand || 'VM FACTORY'}  ·  ${title} `, { fg: C.gold, bold: true }); };
+const footer = (sc, hint, err) => sc.put(2, ROWS - 2, err ? `  ${err}` : `  ${hint}`, { fg: err ? C.red : C.grey });
+const list = (sc, x, y, w, h, title, items, sel, focused) => {
+  sc.box(x, y, w, h, title, { fg: focused ? C.red : C.grey });
+  items.forEach((it, i) => { const on = i === sel; const s = (on ? '▸ ' : '  ') + it; sc.put(x + 1, y + 1 + i, s.padEnd(w - 2).slice(0, w - 2), on ? { fg: C.hlfg, bg: C.hlbg, bold: true } : { fg: C.fg }); });
+};
+if (false) {
+mkdirSync('/home/claude/tui/out', { recursive: true });
+const out = (name, sc) => writeFileSync(`/home/claude/tui/out/${name}.svg`, sc.svg());
+
+// 1. choose (weighted columns: the layout shipped in the ui.rs fix)
+{ const sc = new Screen(); frame(sc, 'request a VirtualMachineSet in team-billing');
+  sc.box(1, 1, COLS - 2, 3, 'name', { fg: C.red }); sc.put(2, 2, 'billing-api');
+  const cols = [['image', 38, ['ubuntu24-podman-20260927', 'ubuntu24-podman-20260901'], 0], ['size', 30, ['small   (2 vCPU / 4096 MiB)', 'medium  (4 vCPU / 8192 MiB)', 'large   (8 vCPU / 16384 MiB)'], 1], ['network', 18, ['production', 'staging'], 0], ['replicas', 12, ['1', '2', '3', '4'], 2], ['placement', 16, ['dc01'], 0]];
+  let x = 1; cols.forEach(([t, w, items, sel]) => { list(sc, x, 4, w, ROWS - 7, t, items, sel, false); x += w; });
+  footer(sc, 'Tab: next field   ↑/↓: choose   Enter: continue   Esc: quit'); out('01-choose', sc); }
+// 2. addresses
+{ const sc = new Screen(); frame(sc, 'IPv4 address per replica');
+  ['10.40.10.21', '10.40.10.22', ''].forEach((v, i) => { sc.box(1, 1 + i * 3, COLS - 2, 3, `billing-api-0${i + 1}`, { fg: i === 2 ? C.red : C.grey }); sc.put(2, 2 + i * 3, v); });
+  footer(sc, 'Tab: next   ←: back   Enter: review   Esc: quit'); out('02-addresses', sc); }
+// 3. review
+{ const sc = new Screen(); frame(sc, 'review - this is exactly what will be signed and applied');
+  const yaml = ['{', '  "apiVersion": "vmfactory.internal.template-domain.com/v1alpha1",', '  "kind": "VirtualMachineSet",', '  "metadata": {', '    "name": "billing-api",', '    "namespace": "team-billing"', '  },', '  "spec": {', '    "image": "ubuntu24-podman-20260927",', '    "size": "medium",', '    "network": "production",', '    "replicas": 3,', '    "placement": "dc01",', '    "addresses": [', '      "10.40.10.21",', '      "10.40.10.22",', '      "10.40.10.23"', '    ]', '  }', '}'];
+  yaml.forEach((l, i) => sc.put(2, 1 + i, l, { fg: C.white }));
+  footer(sc, 'Enter: sign, store as freight in Harbor, apply   ←: back   Esc: quit'); out('03-review', sc); }
+// 4. watch (converging) and 5. watch (ready)
+const watch = (ready) => { const sc = new Screen(); frame(sc, 'converging - Crossplane is reconciling your set');
+  sc.put(2, 1, 'freight   ', { fg: C.grey }); sc.put(12, 1, 'harbor.internal.template-domain.com/platform/freight/team-billing:team-billing-billing-api-1790586245', { fg: C.gold });
+  sc.put(2, 2, 'digest    ', { fg: C.grey }); sc.put(12, 2, 'sha256:4a1f9c1e7b2d0e6f53a8c1d4e9b7f2a0c6d3e8b1f4a7c0d9e2b5f8a1c4d7e0b3f6');
+  sc.put(2, 3, 'requested ', { fg: C.grey }); sc.put(12, 3, 'jane.doe@internal.template-domain.com at 2026-09-28T09:04:05Z');
+  sc.put(2, 6, ready ? 'READY' : 'NOT READY', { fg: ready ? C.gold : C.red, bold: true }); sc.put(ready ? 8 : 12, 6, `   synced=true   ${ready ? 'Successfully composed' : 'Composing resources'}`, { fg: C.grey });
+  const rows = [['billing-api-01', '10.40.10.21', ready || true ? '4213a9f1-5b2e-4c7a-9d1f-3e8b6c2a7f01' : '', true], ['billing-api-02', '10.40.10.22', ready ? '4213b7c0-2f9d-4e18-8a6c-1d5e9f3b8a02' : '', ready], ['billing-api-03', '10.40.10.23', ready ? '4213c8d1-7a3e-4f2b-b1e9-6c4d2a8e9f03' : '', ready]];
+  rows.forEach(([n, ip, u, r], i) => sc.put(2, 8 + i, `  ${n.padEnd(24)} ${ip.padEnd(16)} ${(u || '').padEnd(38)} ${r ? 'ready' : '…'}`));
+  sc.put(2, 12, '  anti-affinity: billing-api-anti-affinity', { fg: C.grey });
+  footer(sc, 'polling every 3 s   Esc: quit (the set keeps converging)'); return sc; };
+out('04-watch-converging', watch(false)); out('05-watch-ready', watch(true));
+console.log('ok');
+
+}
+
+__term = { Screen, frame, footer, list, C, W, H };
+}
+const { clamp, ease, fade, g, slide, line, packet, check, window_ } = __engine;
+const { Screen, frame: tframe, footer: tfooter, list: tlist, C: TC, W: TW, H: TH } = __term;
+const ktext = text;
+// "How Crossplane 2 actually works" — day 0 registration, XRD anatomy, day 1 self-service, match / no-match, guards, loop.
+
+
+const G = { bg: '#050607', panel: '#0B0E0C', ink: '#E6F2EA', green: '#3DFF9A', green2: '#1BAF66', amber: '#FFB000', grey: '#7C8A82', dim: '#2A332E', red: '#FF4D4D' };
+const P = { bg: G.bg, fg: G.ink, accent: G.green, line: G.grey, soft: G.panel, gold: G.amber, grey: G.grey, dim: G.dim };
+const W = 1280, H = 720;
+const T = (x, y, t, o = {}) => ktext(P, x, y, t, o);
+const card = (x, y, w, h, title, body = [], o = {}) => {
+  let s = `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="${o.fill ?? G.panel}" stroke="${o.stroke ?? G.dim}" stroke-width="${o.sw ?? 1.5}"/>`;
+  s += T(x + w / 2, y + (body.length ? 20 : h / 2 + 4), title, { size: o.size ?? 12, weight: 700, anchor: 'middle', color: o.color ?? G.ink, mono: o.mono });
+  body.forEach((b, i) => s += T(x + w / 2, y + 38 + i * 15, b, { size: 10, anchor: 'middle', color: G.grey, mono: o.mono }));
+  return s;
+};
+const strobe = (t, period = 1.2) => 0.35 + 0.65 * Math.abs(Math.sin((t / period) * Math.PI));
+const mac = (x, y, w, h, title, inner) => `<g transform="translate(${x} ${y})"><rect width="${w}" height="${h}" rx="10" fill="${G.panel}" stroke="${G.dim}"/><rect width="${w}" height="28" rx="10" fill="#101512"/><rect y="18" width="${w}" height="10" fill="#101512"/><circle cx="18" cy="14" r="5" fill="#FF5F57"/><circle cx="36" cy="14" r="5" fill="#FEBC2E"/><circle cx="54" cy="14" r="5" fill="#28C840"/>${T(w / 2, 18, title, { size: 11, anchor: 'middle', color: G.grey, mono: true })}<g transform="translate(0 28)">${inner}</g></g>`;
+
+// The cluster, drawn in every scene (right side), with components lighting up over time.
+function cluster(t, on) {
+  const x = 700, y = 60, w = 540, h = 440;
+  let s = mac(x, y, w, h, 'k3s · crossplane-system · edgefactory-system', '');
+  const inner = (ix, iy, iw, ih, title, body, key, o = {}) => slide(fade(t, on[key] ?? 0, 0.5), 8, card(x + ix, y + 28 + iy, iw, ih, title, body, o));
+  s += inner(16, 12, 150, 56, 'Crossplane 2.4', ['composition engine'], 'core', { stroke: G.green });
+  s += inner(182, 12, 170, 56, 'provider-upjet-cloudflare', ['official · namespaced'], 'provider', { mono: true });
+  s += inner(368, 12, 156, 56, 'functions', ['env-configs · go-templating', 'auto-ready'], 'functions');
+  s += inner(16, 84, 230, 70, 'XRD  AppStack', ['spec: 6 fields   status: 8 fields', 'edgefactory.dronegrid.io/v1alpha1'], 'xrd', { stroke: G.green, sw: 2.5, mono: true });
+  s += inner(262, 84, 262, 70, 'Composition', ['pipeline: environment → render → ready', 'the opinions table as data'], 'comp', { stroke: G.green, sw: 2.5 });
+  s += inner(16, 170, 150, 56, 'EnvironmentConfigs', ['tiers · zones · account'], 'env');
+  s += inner(182, 170, 170, 56, 'Kyverno', ['admission: SSIP identity', '+ freight digest'], 'kyverno', { stroke: G.amber });
+  s += inner(368, 170, 156, 56, 'OTel collector', ['traces · metrics · logs'], 'otel');
+  s += inner(16, 242, 508, 60, 'inventory  (ever-growing, day 0)', [], 'inv');
+  const pk = ['AppStack v1', 'AppStack v2', 'EdgeDB', 'RustService', 'StaticSite', 'Queue'];
+  pk.forEach((p, i) => { const op = fade(t, (on.inv ?? 0) + 0.5 + i * 0.5, 0.35); s += g(op, `<rect x="${x + 28 + i * 82}" y="${y + 28 + 266}" width="74" height="24" rx="5" fill="#101512" stroke="${i < 2 ? G.green : G.dim}"/>` + T(x + 65 + i * 82, y + 28 + 282, p, { size: 9.5, anchor: 'middle', color: i < 2 ? G.green : G.grey })); });
+  s += inner(16, 316, 508, 86, 'namespace team-billing', [], 'ns');
+  return s;
+}
+
+const story = {
+  duration: 78, title: 'How Crossplane 2 actually works',
+  frame(t) {
+    t = clamp(t, 0, 78);
+    let b = `<rect width="${W}" height="${H}" fill="${G.bg}"/>` + T(40, 36, 'HOW CROSSPLANE 2 ACTUALLY WORKS · DAY 0 → DAY 1 · CLOUDFLARE', { size: 12, weight: 700, color: G.green }) + T(W - 40, 36, `${Math.floor(t)}s`, { size: 11, color: G.grey, anchor: 'end' });
+    const on = { core: 2, provider: 3, functions: 3.6, xrd: 16, comp: 17, env: 18, kyverno: 4.2, otel: 4.8, inv: 20, ns: 32 };
+    b += cluster(t, on);
+    // ---------- left column by scene ----------
+    let left = '';
+    const lx = 40, lw = 620;
+    if (t < 12) {
+      // Day 0: platform engineer, bootstrap
+      left += slide(fade(t, 0.3), 10, card(lx, 70, lw, 70, 'DAY 0 · platform engineering', ['one person, once: make bootstrap → Crossplane, provider, functions, Kyverno, OTel on the cluster'], { color: G.green }));
+      const steps = [['make bootstrap', 'OpenTofu installs Crossplane on k3s'], ['provider + functions', 'pulled as signed OCI packages'], ['Kyverno + OTel', 'guards and telemetry before any request exists']];
+      steps.forEach(([a, c], i) => left += slide(fade(t, 1.5 + i * 1.6), 10, card(lx, 160 + i * 80, lw, 64, a, [c], { mono: i === 0 })));
+      left += g(fade(t, 7), T(lx, 420, 'A controller cannot install the cluster it is not on yet. OpenTofu does that once, then goes dormant.', { size: 12, color: G.grey, italic: true }));
+    } else if (t < 32) {
+      // XRD + Composition authoring, packaging, registration
+      const tt = t - 12;
+      left += slide(fade(tt, 0.2), 10, card(lx, 70, lw, 48, 'DAY 0 · write the API once: XRD (what they may ask) + Composition (what it becomes)', [], { color: G.green, size: 11 }));
+      // XRD anatomy with strobing arrows
+      const xx = lx, xy = 132;
+      left += slide(fade(tt, 0.8), 10, `<rect x="${xx}" y="${xy}" width="${lw}" height="200" rx="8" fill="${G.panel}" stroke="${G.green}" stroke-width="2"/>` + T(xx + 14, xy + 22, 'CompositeResourceDefinition  AppStack  (scope: Namespaced)', { size: 12, weight: 700, mono: true }));
+      const specF = ['zone', 'hostname', 'tier', 'exposure', 'database', 'objects'];
+      const statF = ['hostname', 'worker', 'd1DatabaseId', 'r2Bucket', 'accessApplicationId', 'wranglerBindings'];
+      left += g(fade(tt, 1.2), T(xx + 160, xy + 48, 'spec  (the friendly inputs)', { size: 11, weight: 700, color: G.amber }) + T(xx + 440, xy + 48, 'status  (the window back)', { size: 11, weight: 700, color: G.green }));
+      specF.forEach((f, i) => { const op = fade(tt, 1.6 + i * 0.25); left += g(op, T(xx + 160, xy + 70 + i * 20, f, { size: 11, mono: true })); left += g(op * strobe(t), line(P, xx + 100, xy + 66 + i * 20, xx + 150, xy + 66 + i * 20, 1, { color: G.amber, sw: 2 })); });
+      statF.forEach((f, i) => { const op = fade(tt, 3.2 + i * 0.25); left += g(op, T(xx + 440, xy + 70 + i * 20, f, { size: 11, mono: true })); left += g(op * strobe(t + 0.6), line(P, xx + 560, xy + 66 + i * 20, xx + 606, xy + 66 + i * 20, 1, { color: G.green, sw: 2 })); });
+      left += g(fade(tt, 1.6), T(xx + 20, xy + 110, 'TUI', { size: 11, weight: 700, color: G.amber }) + T(xx + 20, xy + 124, 'writes', { size: 9.5, color: G.grey }));
+      left += g(fade(tt, 3.2), T(xx + 612, xy + 110, '→', { size: 14, color: G.green }));
+      left += slide(fade(tt, 5.5), 10, card(lx, 348, 300, 70, 'Composition (pipeline)', ['patch-and-transform as data:', 'tier → sampling, replication, rate limit…'], { stroke: G.green }));
+      left += slide(fade(tt, 6.5), 10, card(lx + 320, 348, 300, 70, 'make build · publish · register', ['xpkg → cosign → GHCR →', 'Configuration installs XRD + Composition'], { mono: true }));
+      left += packet(P, lx + 470, 418, 700 + 16 + 115, 60 + 28 + 84, (tt - 7.2) / 1.2, 'xpkg', { color: G.green });
+      left += g(fade(tt, 9.5), T(lx, 450, 'Registration = the inventory grows. Each package is a pre-registered XRD + Composition pair; the elves stock the shelf before any customer arrives.', { size: 12, color: G.grey, italic: true }));
+    } else if (t < 50) {
+      // Day 1: consumer submits via TUI; SSIP; Kyverno; match?
+      const tt = t - 32;
+      left += slide(fade(tt, 0.2), 10, card(lx, 70, lw, 48, 'DAY 1 · an app team asks, in the SSIP terminal', [], { color: G.green, size: 11 }));
+      left += slide(fade(tt, 0.8), 10, mac(lx, 130, 300, 150, 'edgefactory --mode xp', `<rect width="300" height="122" fill="#070A08"/>` + [['zone', 'dronegrid.io'], ['hostname', 'billing'], ['tier', 'medium'], ['exposure', 'public'], ['database', 'd1'], ['objects', 'true']].map(([k, v], i) => T(12, 20 + i * 17, `${k.padEnd(10)} ${v}`, { size: 10.5, mono: true, color: tt > 1.2 + i * 0.3 ? G.ink : '#3a443e' })).join('')));
+      left += slide(fade(tt, 3.6), 10, card(lx + 320, 130, 300, 150, 'SSIP service', ['1 OIDC verified', '2 schema valid (the XRD\'s OpenAPI v3)', '3 freight pushed + cosign-signed', '4 AppStack applied with digest'], { stroke: G.green }));
+      [0, 1, 2, 3].forEach(i => left += check(P, lx + 332, 164 + i * 15, fade(tt, 4.2 + i * 0.6, 0.3)));
+      left += packet(P, lx + 470, 280, 700 + 16 + 85, 60 + 28 + 170, (tt - 6.6) / 1.0, 'AppStack', { color: G.amber });
+      left += slide(fade(tt, 8.0), 10, card(lx, 300, lw, 54, 'Kyverno admission', ['from the SSIP ServiceAccount?  freight digest present?  → admitted'], { stroke: G.amber }));
+      left += check(P, lx + lw - 24, 318, fade(tt, 9.0, 0.3));
+      left += slide(fade(tt, 10.0), 10, card(lx, 372, lw, 90, 'Crossplane inspects itself', ['is an XRD registered for kind AppStack / edgefactory.dronegrid.io?  → yes (day 0)', 'is there a Composition whose compositeTypeRef matches, with the selected labels?  → yes', 'then: render the pipeline → managed resources → the provider reconciles each one'], { stroke: G.green }));
+      [0, 1, 2].forEach(i => left += check(P, lx + lw - 24, 404 + i * 15, fade(tt, 11 + i * 0.8, 0.3)));
+      left += g(fade(tt, 14.5), T(lx, 490, 'Nothing is improvised at request time. Only what platform engineering pre-registered can be served.', { size: 12, color: G.grey, italic: true }));
+    } else if (t < 60) {
+      // no-match branch
+      const tt = t - 50;
+      left += slide(fade(tt, 0.2), 10, card(lx, 70, lw, 48, 'THE OTHER BRANCH · a kind nobody registered', [], { color: G.red, size: 11 }));
+      left += slide(fade(tt, 0.8), 10, mac(lx, 130, 300, 110, 'kubectl apply', `<rect width="300" height="82" fill="#070A08"/>` + T(12, 22, 'kind: GpuCluster', { size: 11, mono: true, color: G.ink }) + T(12, 40, 'apiVersion: edgefactory.dronegrid.io/v1', { size: 10, mono: true, color: G.grey }) + T(12, 64, 'no such XRD · no Composition', { size: 10.5, mono: true, color: G.red })));
+      left += slide(fade(tt, 2.0), 10, card(lx + 320, 130, 300, 110, 'API server', ['unknown kind → rejected at the door', 'and even a known kind from kubectl', 'is denied by Kyverno (not the SSIP identity)'], { stroke: G.red }));
+      left += g(fade(tt, 2.6), `<circle cx="${lx + 596}" cy="${154}" r="11" fill="${G.red}"/>` + T(lx + 596, 158, '✕', { size: 12, anchor: 'middle', color: '#fff', weight: 700 }));
+      left += slide(fade(tt, 4.0), 10, card(lx, 262, lw, 70, 'Why this matters', ['Self-service has a ceiling, and the ceiling is the inventory. Day 0 decides what day 1 can ask for;', 'the API is the contract, the controller is the enforcement.'], { stroke: G.dim }));
+    } else {
+      // reconcile loop + observability + summary
+      const tt = t - 60;
+      left += slide(fade(tt, 0.2), 10, card(lx, 70, lw, 48, 'FOREVER · reconcile per resource, observe everything', [], { color: G.green, size: 11 }));
+      const cx = lx + 150, cy = 230, r = 80;
+      left += g(fade(tt, 0.8), `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${G.dim}" stroke-width="2" stroke-dasharray="8 6"/>` + T(cx, cy - 4, 'each MR', { size: 11, weight: 700, anchor: 'middle' }) + T(cx, cy + 12, 'observe → diff → correct', { size: 9.5, anchor: 'middle', color: G.grey }));
+      const ang = -Math.PI / 2 + ((t * 1.1) % (Math.PI * 2));
+      left += g(fade(tt, 1.0), `<circle cx="${cx + Math.cos(ang) * r}" cy="${cy + Math.sin(ang) * r}" r="7" fill="${G.green}"/>`);
+      left += slide(fade(tt, 1.6), 10, card(lx + 300, 150, 320, 76, 'Status flows back', ['hostname, worker, d1DatabaseId, r2Bucket,', 'wranglerBindings → the TUI window; wrangler deploy next'], { stroke: G.green }));
+      left += slide(fade(tt, 3.0), 10, card(lx + 300, 240, 320, 76, 'OpenTelemetry', ['reconcile traces, MR conditions as metrics,', 'provider API calls as spans → your Grafana'], { stroke: G.dim }));
+      left += slide(fade(tt, 4.4), 10, card(lx, 340, lw, 110, 'What you just watched', ['Day 0: bootstrap once; author XRD + Composition; package, sign, register → inventory.', 'Day 1: six friendly fields through SSIP → signed freight → admitted → matched to the registered pair → composed.', 'Forever: per-resource reconciliation, status back to the user, nothing read from git at runtime.'], { stroke: G.green }));
+    }
+    b += left;
+    // request lands in the namespace (day 1 onwards)
+    if (t >= 40) { const op = fade(t, 40, 0.6); b += slide(op, 6, card(700 + 32, 60 + 28 + 338, 180, 44, 'AppStack billing-api', ['freight sha256:4a1f…'], { stroke: G.amber, mono: true, size: 11 })); }
+    if (t >= 44) { ['WorkersScript', 'WorkerDomain', 'R2Bucket', 'D1Database'].forEach((m, i) => b += slide(fade(t, 44 + i * 0.8, 0.5), 6, card(700 + 232 + (i % 2) * 150, 60 + 28 + 338 + Math.floor(i / 2) * 24, 140, 20, m, [], { size: 9.5, mono: true, stroke: G.green2 }))); }
+    // caption
+    const scenes = [[0, 12, 'Day 0 — the substrate', 'Platform engineering runs make bootstrap once. Crossplane, the official upjet Cloudflare provider, the three functions, Kyverno and the OTel collector exist before any request does.'], [12, 32, 'Day 0 — the API, pre-registered', 'An XRD declares the six friendly spec fields and the status window; the Composition is the opinions table rendered into managed resources. Packaged, signed, installed by a Configuration: the inventory grows.'], [32, 50, 'Day 1 — self-service', 'The SSIP terminal writes the spec; the service verifies identity, validates against the XRD, stores signed freight, applies the AppStack. Kyverno admits it; Crossplane looks for the registered XRD + Composition pair and composes.'], [50, 60, 'No match, no service', 'A kind nobody registered is rejected by the API server; a known kind from kubectl is denied by Kyverno. Day 0 decides what day 1 may ask for.'], [60, 78, 'Forever', 'Each managed resource reconciles on its own; status flows back into the XR and the terminal; OpenTelemetry carries every reconcile. Then: wrangler deploy into the shell.']];
+    for (const [a, c, h, l] of scenes) if (t >= a && t < c) b += `<rect x="0" y="${H - 96}" width="${W}" height="96" fill="${G.panel}"/><rect x="0" y="${H - 96}" width="${W}" height="2" fill="${G.green}"/>` + T(40, H - 66, h.toUpperCase(), { size: 13, weight: 700, color: G.green }) + (() => { const out = []; let cur = ''; for (const w of l.split(' ')) { if ((cur + ' ' + w).trim().length > 170) { out.push(cur.trim()); cur = w; } else cur += ' ' + w; } if (cur.trim()) out.push(cur.trim()); return out.map((x, i) => T(40, H - 44 + i * 18, x, { size: 12.5 })).join(''); })();
+    b += `<rect x="40" y="${H - 104}" width="${W - 80}" height="2" fill="${G.dim}"/><rect x="40" y="${H - 104}" width="${((W - 80) * t / 78).toFixed(1)}" height="2" fill="${G.green}"/>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${b}</svg>`;
+  }
+};
+
+(function(){
+  const stage=document.getElementById('stage'), play=document.getElementById('play'), seek=document.getElementById('seek'), time=document.getElementById('time'), loop=document.getElementById('loop');
+  const D=story.duration; let t=0, playing=false, last=0, lastDrawn=-1;
+  function draw(){ const q=Math.round(t*30)/30; if(q!==lastDrawn){ stage.innerHTML=story.frame(q); lastDrawn=q; } seek.value=Math.round(t/D*1000); time.textContent=t.toFixed(1)+' s'; }
+  function tick(now){ if(!playing) return; t+=(now-last)/1000; last=now; if(t>=D){ if(loop.checked) t=0; else { t=D; playing=false; play.textContent='Play'; } } draw(); requestAnimationFrame(tick); }
+  function setPlaying(p){ playing=p; play.textContent=p?'Pause':'Play'; if(p){ if(t>=D) t=0; last=performance.now(); requestAnimationFrame(tick); } }
+  play.onclick=()=>setPlaying(!playing); document.getElementById('restart').onclick=()=>{ t=0; draw(); }; seek.oninput=()=>{ t=seek.value/1000*D; draw(); };
+  document.addEventListener('keydown',e=>{ if(e.code==='Space'){ e.preventDefault(); setPlaying(!playing);} if(e.code==='ArrowRight'){ t=Math.min(D,t+2); draw(); } if(e.code==='ArrowLeft'){ t=Math.max(0,t-2); draw(); } if(e.code==='Home'){ t=0; draw(); } });
+  draw();
+})();
+</script></body></html>
