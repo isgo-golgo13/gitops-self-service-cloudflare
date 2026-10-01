@@ -328,81 +328,81 @@ The following sections cover a Rust-native terminal UI (TUI) self-service deploy
 
 ## TUI Self-Service for OpenTofu + Packer Design for Cloudflare Workflows (Non-K8s GitOps - NGO)
 
-Stage 1
+**Stage 1**
 
 ![stage 1](edge-factory-ngo/static-assets/01-start.svg)
 
-Stage 2
+**Stage 2**
 
 ![stage 2](edge-factory-ngo/static-assets/02-choose.svg)
 
-Stage 3
+**Stage 3**
 
 ![stage 3](edge-factory-ngo/static-assets/03-review.svg)
 
-Stage 4
+**Stage 4**
 
 ![stage 4](edge-factory-ngo/static-assets/04-dispatch.svg)
 
-Stage 5
+**Stage 5**
 
 ![stage 5](edge-factory-ngo/static-assets/05-provisioning.svg)
 
-Stage 6
+**Stage 6**
 
 ![stage 6](edge-factory-ngo/static-assets/06-provisioned.svg)
 
 
 ## TUI Self-Service for OpenTofu + Packer Design for Cloudflare Workflows (K8s GitOps - GO)
 
-Stage 1
+**Stage 1**
 
 ![stage 1](edge-factory-go/static-assets/01-start.svg)
 
-Stage 2
+**Stage 2**
 
 ![stage 2](edge-factory-go/static-assets/02-choose.svg)
 
-Stage 3
+**Stage 3**
 
 ![stage 3](edge-factory-go/static-assets/03-review.svg)
 
-Stage 4
+**Stage 4**
 
 ![stage 4](edge-factory-go/static-assets/04-dispatch.svg)
 
-Stage 5
+**Stage 5**
 
 ![stage 5](edge-factory-go/static-assets/05-provisioning.svg)
 
-Stage 6
+**Stage 6**
 
 ![stage 6](edge-factory-go/static-assets/06-provisioned.svg)
 
 
 ## TUI Self-Service for Crossplane + Packer Design for Cloudflare Workflows (K8s GitOps - GLGO)
 
-Stage 1
+**Stage 1**
 
 ![stage 1](edge-factory-xp/static-assets/01-start.svg)
 
-Stage 2
+**Stage 2**
 
 ![stage 2](edge-factory-xp/static-assets/02-choose.svg)
 
-Stage 3
+**Stage 3**
 
 ![stage 3](edge-factory-xp/static-assets/03-review.svg)
 
-Stage 4
+**Stage 4**
 
 ![stage 4](edge-factory-xp/static-assets/04-dispatch.svg)
 
-Stage 5
+**Stage 5**
 
 ![stage 5](edge-factory-xp/static-assets/05-provisioning.svg)
 
-Stage 6
+**Stage 6**
 
 ![stage 6](edge-factory-xp/static-assets/06-provisioned.svg)
 
