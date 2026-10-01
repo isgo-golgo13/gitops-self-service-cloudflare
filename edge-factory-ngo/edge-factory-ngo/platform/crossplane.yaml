@@ -1,0 +1,19 @@
+apiVersion: meta.pkg.crossplane.io/v1
+kind: Configuration
+metadata:
+  name: edgefactory
+  annotations:
+    meta.crossplane.io/source: ghcr.io/isgo-golgo13/edge-factory-xp
+    meta.crossplane.io/description: Self-service Cloudflare app stacks (Worker shell, R2, D1/Hyperdrive, Access, WAF, LB)
+spec:
+  crossplane:
+    version: ">=v2.2.0"
+  dependsOn:
+    - provider: xpkg.crossplane.io/crossplane-contrib/provider-upjet-cloudflare
+      version: ">=v0.1.0"
+    - function: xpkg.crossplane.io/crossplane-contrib/function-environment-configs
+      version: ">=v0.8.0"
+    - function: xpkg.crossplane.io/crossplane-contrib/function-go-templating
+      version: ">=v0.13.0"
+    - function: xpkg.crossplane.io/crossplane-contrib/function-auto-ready
+      version: ">=v0.7.0"

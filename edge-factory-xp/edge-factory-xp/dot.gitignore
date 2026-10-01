@@ -1,0 +1,11 @@
+**/.terraform/
+*.tfstate*
+*.tfplan
+artifacts/
+target/
+.test/
+ssip/target/
+*.xpkg
+*.pem
+*.key
+!**/.terraform.lock.hcl

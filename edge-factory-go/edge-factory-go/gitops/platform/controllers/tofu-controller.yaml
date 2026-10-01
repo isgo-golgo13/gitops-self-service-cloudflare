@@ -1,0 +1,42 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: tofu-controller
+  namespace: flux-system
+spec:
+  interval: 30m
+  timeout: 10m
+  chart:
+    spec:
+      chart: tofu-controller
+      version: "0.16.5"
+      sourceRef:
+        kind: HelmRepository
+        name: tofu-controller
+  install:
+    crds: Create
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    replicaCount: 1
+    # No AWS primitive modules on-prem.
+    awsPackage:
+      install: false
+    runner:
+      creationTimeout: 5m0s
+      serviceAccount:
+        create: true
+        allowedNamespaces:
+          - flux-system
+    concurrency: 4
+    resources:
+      limits:
+        cpu: "1"
+        memory: 1Gi
+      requests:
+        cpu: 200m
+        memory: 128Mi

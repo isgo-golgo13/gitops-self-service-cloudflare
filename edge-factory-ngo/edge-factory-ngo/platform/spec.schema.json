@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edgefactory.dronegrid.io/schemas/appstack-v1alpha1.json",
+  "title": "AppStack spec",
+  "description": "The friendly spec. Identical in requests/<name>.json (NGO/GO) and spec: of the AppStack XR (XP).",
+  "type": "object",
+  "required": ["zone", "hostname", "tier", "exposure"],
+  "additionalProperties": false,
+  "properties": {
+    "zone": { "type": "string", "description": "Cloudflare zone (apex domain) the app lives in", "pattern": "^[a-z0-9.-]+\\.[a-z]{2,}$" },
+    "hostname": { "type": "string", "description": "Subdomain under the zone", "pattern": "^[a-z][a-z0-9-]{0,40}$" },
+    "tier": { "type": "string", "enum": ["small", "medium", "large"], "description": "Platform sizing profile: observability, replication, rate limits" },
+    "exposure": { "type": "string", "enum": ["public", "private", "hybrid"], "description": "public: WAF only; private: + Zero Trust Access; hybrid: + load balancer to external origins" },
+    "database": { "type": "string", "enum": ["none", "d1", "postgres"], "default": "none", "description": "d1 = managed replicated SQLite; postgres = Hyperdrive to an external Postgres" },
+    "objects": { "type": "boolean", "default": false, "description": "An R2 bucket for application objects" },
+    "container": { "type": "boolean", "default": false, "description": "The Worker fronts a Cloudflare Container (deployed with wrangler)" },
+    "origins": { "type": "array", "items": { "type": "string" }, "default": [], "description": "External origins; required when exposure = hybrid" }
+  }
+}

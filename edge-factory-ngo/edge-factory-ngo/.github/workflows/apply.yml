@@ -1,0 +1,87 @@
+name: Edge Factory approved apply
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# No automatic cancellation of an apply in progress.
+# GitHub concurrency is not a durable FIFO queue; see README for release policy.
+concurrency:
+  group: edge-prod-apply
+  cancel-in-progress: false
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      required: ${{ steps.changes.outputs.required }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - id: changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node ci/deployment-changes.mjs
+
+  apply:
+    needs: changes
+    if: needs.changes.outputs.required == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: production
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+      id-token: write
+    env:
+      CI_STAGE: apply
+      GH_TOKEN: ${{ github.token }}
+      BAO_ADDR: ${{ vars.BAO_ADDR }}
+      BAO_AUDIENCE: ${{ vars.BAO_AUDIENCE }}
+      BAO_ROLE: edge-prod-apply
+      BAO_KV_PATH: secret/data/cloudflare/prod/apply
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Find the successful plan for the merged PR
+        id: plan
+        run: node ci/select-plan.mjs
+      - name: Download that exact artifact
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          artifact-ids: ${{ steps.plan.outputs.artifact_id }}
+          run-id: ${{ steps.plan.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: artifacts
+          merge-multiple: true
+      - name: Verify plan provenance and freshness
+        env:
+          PLAN_PR: ${{ steps.plan.outputs.pr }}
+          PLAN_HEAD_SHA: ${{ steps.plan.outputs.head_sha }}
+          PLAN_RUN_ID: ${{ steps.plan.outputs.run_id }}
+          PLAN_RUN_ATTEMPT: ${{ steps.plan.outputs.run_attempt }}
+        run: node ci/verify-plan.mjs
+      - name: Obtain fresh credentials using OIDC
+        run: node ci/auth.mjs
+      - name: Init against the R2 state bucket with the reviewed provider lockfile
+        run: node ci/tofu.mjs init -lockfile=readonly
+      - name: Apply the saved plan
+        run: node ci/tofu.mjs apply -lock-timeout=5m ../../../artifacts/approved.tfplan
+      - name: Revoke OpenBao token
+        if: always()
+        run: node ci/auth.mjs revoke
+      - name: Remove transient files
+        if: always()
+        run: rm -rf artifacts infra/live/prod/.terraform

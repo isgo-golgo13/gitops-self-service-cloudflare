@@ -1,0 +1,28 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: { name: edgefactory-consumer }
+rules:
+  - apiGroups: [edgefactory.dronegrid.io]
+    resources: [appstacks]
+    verbs: [get, list, watch]
+  - apiGroups: [edgefactory.dronegrid.io]
+    resources: [appstacks/status]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: { name: edgefactory-ssip }
+rules:
+  - apiGroups: [edgefactory.dronegrid.io]
+    resources: [appstacks]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [apiextensions.crossplane.io]
+    resources: [compositeresourcedefinitions, environmentconfigs]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: { name: edgefactory-ssip }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: edgefactory-ssip }
+subjects:
+  - { kind: ServiceAccount, name: edgefactory-ssip, namespace: edgefactory-system }

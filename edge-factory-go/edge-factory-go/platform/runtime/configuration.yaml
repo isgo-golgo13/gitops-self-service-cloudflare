@@ -1,0 +1,8 @@
+apiVersion: pkg.crossplane.io/v1
+kind: Configuration
+metadata: { name: edgefactory }
+spec:
+  package: ghcr.io/isgo-golgo13/edge-factory-xp/configuration-edgefactory:v1.0.0
+  packagePullSecrets: [{ name: registry-credentials }]
+  revisionActivationPolicy: Automatic
+  revisionHistoryLimit: 3

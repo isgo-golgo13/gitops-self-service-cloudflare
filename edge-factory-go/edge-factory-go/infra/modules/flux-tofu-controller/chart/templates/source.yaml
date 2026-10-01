@@ -1,0 +1,12 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: vm-factory
+  namespace: {{ .Release.Namespace }}
+spec:
+  interval: {{ .Values.artifact.interval }}
+  url: {{ .Values.artifact.url }}
+  ref:
+    tag: {{ .Values.artifact.tag }}
+  secretRef:
+    name: {{ .Values.artifact.secretRef }}

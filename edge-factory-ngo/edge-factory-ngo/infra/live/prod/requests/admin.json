@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "admin": {
+      "zone": "dronegrid.io",
+      "hostname": "admin",
+      "tier": "small",
+      "exposure": "private",
+      "database": "none",
+      "objects": false,
+      "container": false
+    }
+  }
+}

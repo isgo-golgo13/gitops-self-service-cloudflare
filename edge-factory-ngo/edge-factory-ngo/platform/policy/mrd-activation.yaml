@@ -1,0 +1,16 @@
+# Activate only the Cloudflare kinds the Composition renders.
+apiVersion: apiextensions.crossplane.io/v1beta1
+kind: ManagedResourceActivationPolicy
+metadata: { name: edgefactory }
+spec:
+  activate:
+    - workersscripts.workers.cloudflare.m.crossplane.io
+    - workerdomains.workers.cloudflare.m.crossplane.io
+    - r2buckets.r2.cloudflare.m.crossplane.io
+    - d1databases.misc.cloudflare.m.crossplane.io
+    - hyperdriveconfigs.misc.cloudflare.m.crossplane.io
+    - accessapplications.access.cloudflare.m.crossplane.io
+    - accesspolicies.access.cloudflare.m.crossplane.io
+    - loadbalancers.loadbalancer.cloudflare.m.crossplane.io
+    - loadbalancerpools.loadbalancer.cloudflare.m.crossplane.io
+    - loadbalancermonitors.loadbalancer.cloudflare.m.crossplane.io

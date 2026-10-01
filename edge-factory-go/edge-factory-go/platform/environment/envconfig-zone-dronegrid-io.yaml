@@ -1,0 +1,9 @@
+# One per zone. Zone IDs are platform data; app teams name the zone, never its ID.
+apiVersion: apiextensions.crossplane.io/v1beta1
+kind: EnvironmentConfig
+metadata:
+  name: zone-dronegrid-io
+  labels:
+    edgefactory.dronegrid.io/zone: dronegrid.io
+data:
+  zoneId: CHANGEME_ZONE_ID

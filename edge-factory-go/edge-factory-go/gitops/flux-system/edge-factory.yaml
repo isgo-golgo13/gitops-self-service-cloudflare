@@ -1,0 +1,21 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: edge-factory
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./gitops/workloads/edge-factory
+  prune: true
+  wait: true
+  timeout: 45m
+  dependsOn:
+    - name: platform-secrets
+  sourceRef:
+    kind: OCIRepository
+    name: edge-factory
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: prod-edge
+      namespace: flux-system

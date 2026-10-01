@@ -1,0 +1,268 @@
+# Pipeline: environment-configs (zone IDs, tier opinions) -> go-templating (render MRs +
+# status) -> auto-ready. Same opinions table as infra/modules/app-stack/main.tf.
+# MR kinds/groups from crossplane-contrib/provider-upjet-cloudflare (namespaced, .m groups).
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: appstack.cloudflare.edgefactory.dronegrid.io
+  labels: { provider: cloudflare }
+spec:
+  compositeTypeRef: { apiVersion: edgefactory.dronegrid.io/v1alpha1, kind: AppStack }
+  mode: Pipeline
+  pipeline:
+    - step: environment
+      functionRef: { name: crossplane-contrib-function-environment-configs }
+      input:
+        apiVersion: environmentconfigs.fn.crossplane.io/v1beta1
+        kind: Input
+        spec:
+          environmentConfigs:
+            - type: Reference
+              ref: { name: edgefactory-platform }
+            - type: Selector
+              selector:
+                mode: Single
+                matchLabels:
+                  - key: edgefactory.dronegrid.io/zone
+                    type: FromCompositeFieldPath
+                    valueFromFieldPath: spec.zone
+    - step: render
+      functionRef: { name: crossplane-contrib-function-go-templating }
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource }}
+            {{- $env := index .context "apiextensions.crossplane.io/environment" }}
+            {{- $tier := index $env.tiers $xr.spec.tier }}
+            {{- $name := $xr.metadata.name }}
+            {{- $host := printf "%s.%s" $xr.spec.hostname $xr.spec.zone }}
+            {{- $db := $xr.spec.database | default "none" }}
+            ---
+            # The Worker SHELL: created once, never updated by Crossplane (no Update in
+            # managementPolicies) so wrangler deploys never fight the controller.
+            apiVersion: workers.cloudflare.m.crossplane.io/v1alpha1
+            kind: WorkersScript
+            metadata:
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: worker
+                crossplane.io/external-name: {{ $name }}
+            spec:
+              managementPolicies: ["Observe", "Create", "Delete", "LateInitialize"]
+              providerConfigRef: { name: cloudflare }
+              forProvider:
+                accountId: {{ $env.accountId }}
+                scriptName: {{ $name }}
+                content: |
+                  export default { fetch() { return new Response("{{ $name }}: shell provisioned, awaiting wrangler deploy", { status: 503 }); } }
+                mainModule: worker.js
+                observability:
+                  enabled: true
+                  headSamplingRate: {{ $tier.observabilitySampling }}
+                logpush: {{ $tier.logpush }}
+            ---
+            apiVersion: workers.cloudflare.m.crossplane.io/v1alpha1
+            kind: WorkerDomain
+            metadata:
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: domain
+            spec:
+              providerConfigRef: { name: cloudflare }
+              forProvider:
+                accountId: {{ $env.accountId }}
+                zoneId: {{ $env.zoneId }}
+                hostname: {{ $host }}
+                service: {{ $name }}
+            {{- if $xr.spec.objects }}
+            ---
+            apiVersion: r2.cloudflare.m.crossplane.io/v1alpha1
+            kind: R2Bucket
+            metadata:
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: objects
+                crossplane.io/external-name: {{ $name }}-objects
+            spec:
+              providerConfigRef: { name: cloudflare }
+              forProvider:
+                accountId: {{ $env.accountId }}
+                name: {{ $name }}-objects
+                location: {{ $env.region }}
+                storageClass: {{ $tier.r2StorageClass }}
+            {{- end }}
+            {{- if eq $db "d1" }}
+            ---
+            apiVersion: misc.cloudflare.m.crossplane.io/v1alpha1
+            kind: D1Database
+            metadata:
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: d1
+                crossplane.io/external-name: {{ $name }}-db
+            spec:
+              providerConfigRef: { name: cloudflare }
+              forProvider:
+                accountId: {{ $env.accountId }}
+                name: {{ $name }}-db
+                primaryLocationHint: {{ $env.region }}
+                readReplication:
+                  - mode: {{ $tier.d1ReadReplication | ternary "auto" "disabled" }}
+            {{- end }}
+            {{- if eq $db "postgres" }}
+            ---
+            apiVersion: misc.cloudflare.m.crossplane.io/v1alpha1
+            kind: HyperdriveConfig
+            metadata:
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: hyperdrive
+                crossplane.io/external-name: {{ $name }}-pg
+            spec:
+              providerConfigRef: { name: cloudflare }
+              forProvider:
+                accountId: {{ $env.accountId }}
+                name: {{ $name }}-pg
+                origin:
+                  - scheme: postgres
+                    host: {{ (index $env.postgresOrigins $name).host }}
+                    port: {{ (index $env.postgresOrigins $name).port | default 5432 }}
+                    database: {{ (index $env.postgresOrigins $name).database }}
+                    user: {{ (index $env.postgresOrigins $name).user }}
+                    passwordSecretRef:
+                      name: pg-{{ $name }}
+                      namespace: {{ $xr.metadata.namespace }}
+                      key: password
+                caching:
+                  - disabled: {{ not $tier.hyperdriveCaching }}
+            {{- end }}
+            {{- if eq $xr.spec.exposure "private" }}
+            ---
+            apiVersion: access.cloudflare.m.crossplane.io/v1alpha1
+            kind: AccessPolicy
+            metadata:
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: access-policy
+            spec:
+              providerConfigRef: { name: cloudflare }
+              forProvider:
+                accountId: {{ $env.accountId }}
+                name: {{ $name }}-allow
+                decision: allow
+                sessionDuration: {{ $tier.accessSession }}
+                include:
+                {{- range $env.allowedEmailDomains }}
+                  - emailDomain:
+                      - domain: {{ . }}
+                {{- end }}
+            ---
+            apiVersion: access.cloudflare.m.crossplane.io/v1alpha1
+            kind: AccessApplication
+            metadata:
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: access-app
+            spec:
+              providerConfigRef: { name: cloudflare }
+              forProvider:
+                accountId: {{ $env.accountId }}
+                name: {{ $name }}
+                type: self_hosted
+                domain: {{ $host }}
+                sessionDuration: {{ $tier.accessSession }}
+                policies:
+                  - idSelector:
+                      matchControllerRef: true
+                    precedence: 1
+            {{- end }}
+            {{- if eq $xr.spec.exposure "hybrid" }}
+            ---
+            apiVersion: loadbalancer.cloudflare.m.crossplane.io/v1alpha1
+            kind: LoadBalancerMonitor
+            metadata:
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: lb-monitor
+            spec:
+              providerConfigRef: { name: cloudflare }
+              forProvider:
+                accountId: {{ $env.accountId }}
+                type: https
+                method: GET
+                path: /healthz
+                expectedCodes: "2xx"
+                interval: 60
+                timeout: 5
+                retries: 2
+            ---
+            apiVersion: loadbalancer.cloudflare.m.crossplane.io/v1alpha1
+            kind: LoadBalancerPool
+            metadata:
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: lb-pool
+            spec:
+              providerConfigRef: { name: cloudflare }
+              forProvider:
+                accountId: {{ $env.accountId }}
+                name: {{ $name }}
+                monitorSelector:
+                  matchControllerRef: true
+                minimumOrigins: 1
+                origins:
+                {{- range $i, $o := $xr.spec.origins }}
+                  - name: origin-{{ $i }}
+                    address: {{ $o }}
+                    enabled: true
+                {{- end }}
+            ---
+            apiVersion: loadbalancer.cloudflare.m.crossplane.io/v1alpha1
+            kind: LoadBalancer
+            metadata:
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: lb
+            spec:
+              providerConfigRef: { name: cloudflare }
+              forProvider:
+                zoneId: {{ $env.zoneId }}
+                name: {{ $host }}
+                defaultPoolsSelector:
+                  matchControllerRef: true
+                fallbackPoolSelector:
+                  matchControllerRef: true
+                proxied: true
+                steeringPolicy: dynamic_latency
+            {{- end }}
+            ---
+            apiVersion: edgefactory.dronegrid.io/v1alpha1
+            kind: AppStack
+            status:
+              hostname: {{ $host }}
+              worker: {{ $name }}
+              {{- with getComposedResource . "d1" }}
+              d1DatabaseId: {{ dig "status" "atProvider" "id" "" . | quote }}
+              {{- end }}
+              {{- if $xr.spec.objects }}
+              r2Bucket: {{ $name }}-objects
+              {{- end }}
+              {{- with getComposedResource . "hyperdrive" }}
+              hyperdriveId: {{ dig "status" "atProvider" "id" "" . | quote }}
+              {{- end }}
+              {{- with getComposedResource . "access-app" }}
+              accessApplicationId: {{ dig "status" "atProvider" "id" "" . | quote }}
+              {{- end }}
+              {{- with getComposedResource . "lb" }}
+              loadBalancerId: {{ dig "status" "atProvider" "id" "" . | quote }}
+              {{- end }}
+              wranglerBindings:
+                name: {{ $name }}
+                routes: [{ pattern: {{ $host }}, custom_domain: true }]
+                {{- if eq $db "d1" }}
+                d1_databases: [{ binding: DB, database_name: {{ $name }}-db, database_id: {{ with getComposedResource . "d1" }}{{ dig "status" "atProvider" "id" "" . | quote }}{{ else }}""{{ end }} }]
+                {{- end }}
+                {{- if $xr.spec.objects }}
+                r2_buckets: [{ binding: OBJECTS, bucket_name: {{ $name }}-objects }]
+                {{- end }}
+                {{- if eq $db "postgres" }}
+                hyperdrive: [{ binding: PG, id: {{ with getComposedResource . "hyperdrive" }}{{ dig "status" "atProvider" "id" "" . | quote }}{{ else }}""{{ end }} }]
+                {{- end }}
+                {{- if $xr.spec.container }}
+                containers: [{ class_name: AppContainer, image: ./Containerfile, max_instances: {{ $tier.containerMaxInstances }} }]
+                {{- end }}
+    - step: ready
+      functionRef: { name: crossplane-contrib-function-auto-ready }

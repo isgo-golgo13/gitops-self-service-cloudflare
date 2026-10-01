@@ -1,0 +1,25 @@
+# pre-commit: `make check` + `make test` before every commit.
+# pre-push:   `make push` publishes the committed tree as the OCI artifact Flux reconciles from -
+#             this is the entire "pipeline" of the GO variant.
+repos:
+  - repo: local
+    hooks:
+      - id: check
+        name: OpenTofu fmt/validate, kustomize, cargo check
+        entry: make check
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: test
+        name: repository consistency tests
+        entry: make test
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: push-artifact
+        name: publish OCI artifact (flux push artifact)
+        entry: make push
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

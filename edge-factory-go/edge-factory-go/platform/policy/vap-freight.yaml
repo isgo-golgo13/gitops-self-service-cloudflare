@@ -1,0 +1,25 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata: { name: edgefactory-freight }
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [edgefactory.dronegrid.io]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [appstacks]
+  validations:
+    - expression: "request.userInfo.username == 'system:serviceaccount:edgefactory-system:edgefactory-ssip'"
+      message: "AppStacks are created through the SSIP terminal, not kubectl."
+    - expression: "has(object.metadata.annotations) && 'edgefactory.dronegrid.io/freight' in object.metadata.annotations && object.metadata.annotations['edgefactory.dronegrid.io/freight'].matches('^sha256:[0-9a-f]{64}$')"
+      message: "Missing or malformed freight digest annotation."
+    - expression: "has(object.metadata.annotations) && 'edgefactory.dronegrid.io/requested-by' in object.metadata.annotations"
+      message: "Missing requester identity."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata: { name: edgefactory-freight }
+spec:
+  policyName: edgefactory-freight
+  validationActions: [Deny, Audit]

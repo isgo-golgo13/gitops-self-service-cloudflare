@@ -1,0 +1,14 @@
+# Platform opinions: the same table as infra/modules/app-stack/main.tf (`local.tier`).
+apiVersion: apiextensions.crossplane.io/v1beta1
+kind: EnvironmentConfig
+metadata:
+  name: edgefactory-platform
+data:
+  accountId: CHANGEME_CLOUDFLARE_ACCOUNT_ID
+  region: weur
+  allowedEmailDomains: ["dronegrid.io"]
+  postgresOrigins: {}   # name -> {host, port, database, user}; password via Secret pg-<name>
+  tiers:
+    small:  { observabilitySampling: 0.1, logpush: false, d1ReadReplication: false, r2StorageClass: Standard, rateLimitRpm: 300,  accessSession: 24h, hyperdriveCaching: true, containerMaxInstances: 2 }
+    medium: { observabilitySampling: 0.5, logpush: false, d1ReadReplication: true,  r2StorageClass: Standard, rateLimitRpm: 1200, accessSession: 12h, hyperdriveCaching: true, containerMaxInstances: 5 }
+    large:  { observabilitySampling: 1,   logpush: true,  d1ReadReplication: true,  r2StorageClass: Standard, rateLimitRpm: 6000, accessSession: 8h,  hyperdriveCaching: true, containerMaxInstances: 20 }

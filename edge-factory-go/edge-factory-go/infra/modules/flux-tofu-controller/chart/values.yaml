@@ -1,0 +1,8 @@
+artifact:
+  url: oci://ghcr.io/isgo-golgo13/edge-factory-go/tree
+  tag: main
+  interval: 1m
+  secretRef: registry-credentials
+sync:
+  path: ./gitops/flux-system
+  interval: 10m

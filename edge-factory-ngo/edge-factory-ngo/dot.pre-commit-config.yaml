@@ -1,0 +1,15 @@
+repos:
+  - repo: local
+    hooks:
+      - id: check
+        name: OpenTofu fmt/validate, TFLint, cargo check
+        entry: make check
+        language: system
+        pass_filenames: false
+        files: '\.(tf|tfvars|tfbackend|rs|mjs|sh|yml|yaml|json)$'
+      - id: test
+        name: CI guard tests
+        entry: make test
+        language: system
+        pass_filenames: false
+        files: '\.(mjs)$'

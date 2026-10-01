@@ -1,0 +1,25 @@
+[package]
+name = "edgefactory-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Terminal self-service: prompts rendered from the platform XRD, submits to edgefactory-ssip"
+
+[[bin]]
+name = "edgefactory"
+path = "src/main.rs"
+
+[dependencies]
+edgefactory-core = { path = "../edgefactory-core" }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+clap.workspace = true
+
+[lints]
+workspace = true

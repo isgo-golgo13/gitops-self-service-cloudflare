@@ -1,0 +1,10 @@
+{
+  "role_type": "jwt",
+  "user_claim": "repository_id",
+  "bound_audiences": ["https://openbao.dronegrid.io/github-actions"],
+  "bound_subject": "repo:isgo-golgo13/edge-factory-ngo:pull_request",
+  "bound_claims": { "repository_id": "REPLACE_NUMERIC_REPOSITORY_ID", "event_name": "pull_request" },
+  "token_policies": ["edge-prod-plan"],
+  "token_ttl": "15m",
+  "token_max_ttl": "15m"
+}

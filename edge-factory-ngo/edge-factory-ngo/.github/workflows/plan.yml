@@ -1,0 +1,117 @@
+name: Edge Factory PR plan
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: edge-plan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    if: github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      required: ${{ steps.changes.outputs.required }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - id: changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node ci/deployment-changes.mjs
+
+  # Credential-free checks that always run, including terminal-only PRs.
+  check:
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Format, validate, lint, policy, tests
+        run: make check test
+
+  plan:
+    needs: [changes, check]
+    if: needs.changes.outputs.required == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      CI_STAGE: plan
+      BAO_ADDR: ${{ vars.BAO_ADDR }}
+      BAO_AUDIENCE: ${{ vars.BAO_AUDIENCE }}
+      BAO_ROLE: edge-prod-plan
+      BAO_KV_PATH: secret/data/cloudflare/prod/plan
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          # Plan the synthetic merge tree, not an arbitrary feature-branch tree.
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: OIDC login to OpenBao
+        run: node ci/auth.mjs
+      - name: Init against the R2 state bucket with the reviewed provider lockfile
+        run: node ci/tofu.mjs init -lockfile=readonly
+      - name: Plan
+        run: |
+          mkdir -p artifacts
+          node ci/tofu.mjs plan -lock-timeout=5m -out=../../../artifacts/approved.tfplan
+          node ci/plan-metadata.mjs
+      - name: Save the encrypted plan
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: prod-plan-${{ github.event.pull_request.head.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/approved.tfplan
+            artifacts/metadata.json
+          if-no-files-found: error
+          retention-days: 2
+      - name: Revoke OpenBao token
+        if: always()
+        run: node ci/auth.mjs revoke
+      - name: Remove transient files
+        if: always()
+        run: rm -rf artifacts infra/live/prod/.terraform
+
+  gate:
+    name: Deployment PR gate
+    needs: [changes, check, plan]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require successful classification, checks and any required plan
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CHECK_RESULT: ${{ needs.check.result }}
+          PLAN_REQUIRED: ${{ needs.changes.outputs.required }}
+          PLAN_RESULT: ${{ needs.plan.result }}
+        run: |
+          test "$CHANGES_RESULT" = success
+          test "$CHECK_RESULT" = success
+          if [ "$PLAN_REQUIRED" = true ]; then
+            test "$PLAN_RESULT" = success
+          else
+            test "$PLAN_REQUIRED" = false
+            test "$PLAN_RESULT" = skipped
+          fi

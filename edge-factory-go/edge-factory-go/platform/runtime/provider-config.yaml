@@ -1,0 +1,25 @@
+# Scoped Cloudflare API token from OpenBao through External Secrets.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata: { name: cloudflare-credentials, namespace: crossplane-system }
+spec:
+  refreshInterval: 15m
+  secretStoreRef: { kind: ClusterSecretStore, name: openbao }
+  target:
+    name: cloudflare-credentials
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        credentials: '{"api_token":"{{ .api_token }}"}'
+  data:
+    - secretKey: api_token
+      remoteRef: { key: cloudflare/edgefactory, property: api_token }
+---
+apiVersion: cloudflare.crossplane.io/v1beta1
+kind: ProviderConfig
+metadata: { name: cloudflare }
+spec:
+  credentials:
+    source: Secret
+    secretRef: { namespace: crossplane-system, name: cloudflare-credentials, key: credentials }

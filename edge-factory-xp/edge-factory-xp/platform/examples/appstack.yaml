@@ -1,0 +1,16 @@
+apiVersion: edgefactory.dronegrid.io/v1alpha1
+kind: AppStack
+metadata:
+  name: billing-api
+  namespace: team-billing
+  annotations:
+    edgefactory.dronegrid.io/freight: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    edgefactory.dronegrid.io/requested-by: tomas@dronegrid.io
+spec:
+  zone: dronegrid.io
+  hostname: billing
+  tier: medium
+  exposure: public
+  database: d1
+  objects: true
+  container: true

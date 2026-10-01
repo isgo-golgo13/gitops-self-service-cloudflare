@@ -1,0 +1,8 @@
+{
+  "bound_service_account_names": ["external-secrets"],
+  "bound_service_account_namespaces": ["flux-system"],
+  "audience": "openbao",
+  "token_policies": ["vm-factory-gitops"],
+  "token_ttl": "15m",
+  "token_max_ttl": "15m"
+}

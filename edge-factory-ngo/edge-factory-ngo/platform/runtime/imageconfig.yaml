@@ -1,0 +1,16 @@
+apiVersion: pkg.crossplane.io/v1beta1
+kind: ImageConfig
+metadata: { name: ghcr-edgefactory }
+spec:
+  matchImages:
+    - { type: Prefix, prefix: ghcr.io/isgo-golgo13/edge-factory-xp/ }
+  registry:
+    authentication:
+      pullSecretRef: { name: registry-credentials }
+  verification:
+    provider: Cosign
+    cosign:
+      authorities:
+        - name: edgefactory-key
+          key:
+            secretRef: { name: cosign-public-key, key: cosign.pub }

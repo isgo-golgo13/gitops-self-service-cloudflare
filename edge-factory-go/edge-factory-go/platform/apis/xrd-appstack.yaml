@@ -1,0 +1,53 @@
+# The platform API: the same friendly spec as platform/spec.schema.json, as a Crossplane v2
+# namespaced XRD. Nothing provider-shaped is here; the Composition resolves it.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: appstacks.edgefactory.dronegrid.io
+spec:
+  scope: Namespaced
+  group: edgefactory.dronegrid.io
+  names:
+    kind: AppStack
+    plural: appstacks
+    shortNames: [app]
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [zone, hostname, tier, exposure]
+              properties:
+                zone: { type: string, pattern: '^[a-z0-9.-]+\.[a-z]{2,}$' }
+                hostname: { type: string, pattern: '^[a-z][a-z0-9-]{0,40}$' }
+                tier: { type: string, enum: [small, medium, large] }
+                exposure: { type: string, enum: [public, private, hybrid] }
+                database: { type: string, enum: [none, d1, postgres], default: none }
+                objects: { type: boolean, default: false }
+                container: { type: boolean, default: false }
+                origins: { type: array, items: { type: string }, default: [] }
+              x-kubernetes-validations:
+                - rule: "self.exposure != 'hybrid' || size(self.origins) > 0"
+                  message: "exposure hybrid needs at least one external origin"
+            status:
+              type: object
+              properties:
+                hostname: { type: string }
+                worker: { type: string }
+                d1DatabaseId: { type: string }
+                r2Bucket: { type: string }
+                hyperdriveId: { type: string }
+                accessApplicationId: { type: string }
+                loadBalancerId: { type: string }
+                wranglerBindings: { type: object, x-kubernetes-preserve-unknown-fields: true }
+      additionalPrinterColumns:
+        - { name: HOST, type: string, jsonPath: .status.hostname }
+        - { name: TIER, type: string, jsonPath: .spec.tier }
+        - { name: EXPOSURE, type: string, jsonPath: .spec.exposure }
+        - { name: READY, type: string, jsonPath: ".status.conditions[?(@.type=='Ready')].status" }

@@ -1,0 +1,13 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: flux-system
+  namespace: {{ .Release.Namespace }}
+spec:
+  interval: {{ .Values.sync.interval }}
+  path: {{ .Values.sync.path }}
+  prune: true
+  wait: true
+  sourceRef:
+    kind: OCIRepository
+    name: vm-factory

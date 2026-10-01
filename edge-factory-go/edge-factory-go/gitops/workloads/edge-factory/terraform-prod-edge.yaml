@@ -1,0 +1,79 @@
+# The control loop. The tofu-controller keeps infra/live/prod converged with the OCI artifact:
+# every `interval` it plans; a non-empty plan is applied (approvePlan: auto) and drift is
+# corrected. Set approvePlan to "" to switch to plan-then-human-approve (see the .example file).
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: prod-edge
+  namespace: flux-system
+spec:
+  interval: 5m
+  retryInterval: 2m
+  approvePlan: auto
+  path: ./infra/live/prod
+  sourceRef:
+    kind: OCIRepository
+    name: edge-factory
+    namespace: flux-system
+
+  # Drift detection is on by default; refresh state from vCenter before every apply.
+  refreshBeforeApply: true
+  storeReadablePlan: human
+  enableInventory: true
+  destroyResourcesOnDeletion: false
+  alwaysCleanupRunnerPod: true
+
+  # State in a dedicated R2 bucket: same settings as infra/live/prod/backend.tfbackend,
+  # injected as a backend override so the code itself stays backend-agnostic.
+  backendConfig:
+    customConfiguration: |
+      backend "s3" {
+        bucket = "edge-factory-state"
+        key    = "prod/terraform.tfstate"
+        region = "auto"
+        endpoints = {
+          s3 = "https://CHANGEME_ACCOUNT_ID.r2.cloudflarestorage.com"
+        }
+        use_path_style              = true
+        use_lockfile                = true
+        skip_credentials_validation = true
+        skip_region_validation      = true
+        skip_requesting_account_id  = true
+        skip_metadata_api_check     = true
+        skip_s3_checksum            = true
+      }
+
+  tfstate:
+    lockTimeout: 5m
+
+  remediation:
+    retries: 3
+
+  runnerPodTemplate:
+    spec:
+      image: ghcr.io/flux-iac/tf-runner:v0.16.5
+      envFrom:
+        - secretRef:
+            name: cloudflare-credentials # CLOUDFLARE_API_TOKEN, TF_VAR_postgres_origins
+        - secretRef:
+            name: state-credentials # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (R2)
+        - secretRef:
+            name: tofu-encryption # TF_ENCRYPTION (AES-GCM state + plan encryption)
+      env:
+        - name: TF_IN_AUTOMATION
+          value: "true"
+        - name: TF_INPUT
+          value: "false"
+      resources:
+        requests:
+          cpu: 250m
+          memory: 256Mi
+        limits:
+          cpu: "1"
+          memory: 1Gi
+
+  writeOutputsToSecret:
+    name: prod-edge-outputs
+    outputs:
+      - apps
+      - wrangler_bindings

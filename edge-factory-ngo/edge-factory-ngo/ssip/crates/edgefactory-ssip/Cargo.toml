@@ -1,0 +1,28 @@
+[package]
+name = "edgefactory-ssip"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "SSIP (self-serve infra platform) service: validates requests, stores signed freight in Harbor, applies the XR"
+
+[dependencies]
+edgefactory-core = { path = "../edgefactory-core" }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+kube.workspace = true
+k8s-openapi.workspace = true
+axum.workspace = true
+tower-http.workspace = true
+jsonwebtoken.workspace = true
+reqwest.workspace = true
+clap.workspace = true
+time.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: vm-factory-sync
+description: Bootstrap source and sync for the vm-factory GitOps tree (OCIRepository + Kustomization)
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

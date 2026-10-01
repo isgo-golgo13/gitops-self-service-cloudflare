@@ -1,0 +1,13 @@
+repos:
+  - repo: local
+    hooks:
+      - id: check
+        name: tofu fmt/validate, crossplane validate, cargo check
+        entry: make check
+        language: system
+        pass_filenames: false
+      - id: test
+        name: consistency + cargo tests
+        entry: make test
+        language: system
+        pass_filenames: false

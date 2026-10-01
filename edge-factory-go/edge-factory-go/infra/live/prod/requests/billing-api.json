@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "billing-api": {
+      "zone": "dronegrid.io",
+      "hostname": "billing",
+      "tier": "medium",
+      "exposure": "public",
+      "database": "d1",
+      "objects": true,
+      "container": true
+    }
+  }
+}

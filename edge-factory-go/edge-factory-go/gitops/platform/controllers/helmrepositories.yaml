@@ -1,0 +1,10 @@
+# Upstream OCI chart sources (no private mirror needed for your own use).
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata: { name: tofu-controller, namespace: flux-system }
+spec: { type: oci, interval: 1h, url: "oci://ghcr.io/flux-iac/charts" }
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata: { name: external-secrets, namespace: flux-system }
+spec: { type: oci, interval: 1h, url: "oci://ghcr.io/external-secrets/charts" }

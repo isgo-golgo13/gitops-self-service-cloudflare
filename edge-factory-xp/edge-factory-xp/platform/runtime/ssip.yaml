@@ -1,0 +1,68 @@
+# The SSIP service service (Axum) runs in-cluster with its own ServiceAccount: that identity is the only
+# one admitted to create AppStacks. The TUI authenticates to the service with OIDC.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: edgefactory-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: edgefactory-ssip
+  namespace: edgefactory-system
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: edgefactory-ssip-freight
+  namespace: edgefactory-system
+spec:
+  refreshInterval: 15m
+  secretStoreRef: { kind: ClusterSecretStore, name: openbao }
+  target: { name: edgefactory-ssip-freight, creationPolicy: Owner }
+  data:
+    - secretKey: REGISTRY_USER
+      remoteRef: { key: cloudflare/registry, property: registry_user }
+    - secretKey: REGISTRY_PASSWORD
+      remoteRef: { key: cloudflare/registry, property: registry_password }
+    - secretKey: COSIGN_KEY
+      remoteRef: { key: platform/cosign, property: kms_uri }
+    - secretKey: VAULT_TOKEN
+      remoteRef: { key: platform/cosign, property: openbao_token }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edgefactory-ssip
+  namespace: edgefactory-system
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: edgefactory-ssip } }
+  template:
+    metadata:
+      labels: { app: edgefactory-ssip }
+    spec:
+      serviceAccountName: edgefactory-ssip
+      securityContext: { runAsNonRoot: true, runAsUser: 65532, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: ssip
+          image: ghcr.io/isgo-golgo13/edge-factory/edgefactory-ssip:1.0.0
+          ports: [{ containerPort: 8080, name: http }]
+          envFrom: [{ secretRef: { name: edgefactory-ssip-freight } }]
+          env:
+            - { name: EDGEFACTORY_FREIGHT_REPO, value: ghcr.io/isgo-golgo13/edge-factory-xp/freight }
+            - { name: EDGEFACTORY_OIDC_ISSUER, value: https://sso.dronegrid.io }
+            - { name: EDGEFACTORY_OIDC_AUDIENCE, value: edgefactory }
+            - { name: EDGEFACTORY_LISTEN, value: "0.0.0.0:8080" }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+          readinessProbe: { httpGet: { path: /healthz, port: http } }
+          resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: "1", memory: 512Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: edgefactory-ssip
+  namespace: edgefactory-system
+spec:
+  selector: { app: edgefactory-ssip }
+  ports: [{ port: 443, targetPort: http, name: https }]
