@@ -360,51 +360,51 @@ The following sections cover a Rust-native terminal UI (TUI) self-service deploy
 
 ## References 
 
-- OpenTofu 
-https://opentofu.org/
-https://opentofu.org/docs/cli/code/
-https://search.opentofu.org/provider/opentofu/cloudflare/latest
+#### OpenTofu 
+- https://opentofu.org/
+- https://opentofu.org/docs/cli/code/
+- https://search.opentofu.org/provider/opentofu/cloudflare/latest
 
-- OpenTofu Flux Controller
-https://github.com/flux-iac/tofu-controller
-https://flux-iac.github.io/tofu-controller/getting_started/
-https://flux-iac.github.io/tofu-controller/
+#### OpenTofu Flux Controller
+- https://github.com/flux-iac/tofu-controller
+- https://flux-iac.github.io/tofu-controller/getting_started/
+- https://flux-iac.github.io/tofu-controller/
 
-- Packer
-https://developer.hashicorp.com/packer
-https://developer.hashicorp.com/hcp/docs/packer
+#### Packer
+- https://developer.hashicorp.com/packer
+- https://developer.hashicorp.com/hcp/docs/packer
 
-- Crossplane
-https://www.crossplane.io/
-https://www.upbound.io/
-https://github.com/cdloh/provider-cloudflare
+#### Crossplane
+- https://www.crossplane.io/
+- https://www.upbound.io/
+- https://github.com/cdloh/provider-cloudflare
 
-- OpenTelemetry
-https://opentelemetry.io/
+#### OpenTelemetry
+- https://opentelemetry.io/
 
-- OpenBao (Vault)
-https://openbao.org/
+#### OpenBao (Vault)
+- https://openbao.org/
 
-- OpenChoreo
-https://openchoreo.dev/
+#### OpenChoreo
+- https://openchoreo.dev/
 
-- FluxCD
-https://fluxcd.io/
+#### FluxCD
+- https://fluxcd.io/
 
-- Rust
-https://rust-lang.org/
-https://ratatui.rs/
-https://leptos.dev/
-https://dioxuslabs.com/
+#### Rust
+- https://rust-lang.org/
+- https://ratatui.rs/
+- https://leptos.dev/
+- https://dioxuslabs.com/
 
-- Cloudflare
-https://www.cloudflare.com/
-https://www.cloudflare.com/products/d1/
-https://www.cloudflare.com/products/r2/
-https://www.cloudflare.com/products/containers/
-https://www.cloudflare.com/products/dns/
-https://www.cloudflare.com/products/cdn/
-https://www.cloudflare.com/products/workers/
+#### Cloudflare
+- https://www.cloudflare.com/
+- https://www.cloudflare.com/products/d1/
+- https://www.cloudflare.com/products/r2/
+- https://www.cloudflare.com/products/containers/
+- https://www.cloudflare.com/products/dns/
+- https://www.cloudflare.com/products/cdn/
+- https://www.cloudflare.com/products/workers/
 
 
 
